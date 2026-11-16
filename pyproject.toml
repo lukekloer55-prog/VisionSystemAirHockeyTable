@@ -1,0 +1,7 @@
+[project]
+name = "airhockey-mujoco"
+version = "0.1.0"
+description = "A beginner-friendly air hockey table simulation"
+requires-python = ">=3.12,<3.13"
+dependencies = ["mujoco>=3.3,<4"]
+
