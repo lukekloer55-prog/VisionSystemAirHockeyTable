@@ -94,10 +94,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--self-test', action='store_true')
     parser.add_argument('--camera', type=int, default=0)
+    parser.add_argument('--camera-source', choices=('csi','usb'), default='csi')
+    parser.add_argument('--usb-device', default='/dev/video0')
+    parser.add_argument('--usb-width', type=int, default=1280)
+    parser.add_argument('--usb-height', type=int, default=960)
+    parser.add_argument('--usb-fps', type=float, default=120)
+    parser.add_argument('--usb-fourcc', choices=('MJPG','YUYV'), default='MJPG')
+    parser.add_argument('--test-camera', action='store_true',
+                        help='USB only: benchmark decoded delivery for 10 seconds, without tracker/UI')
     parser.add_argument('--camera-mode', choices=('full30', 'full21', 'fast60'), default='full30',
                         help='IMX219: full sensor aspect at 30/21 FPS, or cropped 720p at 60 FPS')
     # Separate file: never reinterpret the earlier half-table calibration as full-table.
-    parser.add_argument('--config', default=str(Path(__file__).with_name('full_table_calibration.json')))
+    parser.add_argument('--config', default=None)
     parser.add_argument('--goal-config', default=str(Path(__file__).with_name('shot_goal.json')))
     parser.add_argument('--shot-speed-mm-s', type=float, default=1500)
     parser.add_argument('--paddle-restitution', type=float, default=0.8)
@@ -123,13 +131,26 @@ def main():
         parser.error('Paddle diameter must be positive and finite.')
     if not math.isfinite(args.goal_margin_mm) or args.goal_margin_mm < 0:
         parser.error('Goal margin must be nonnegative and finite.')
+    if min(args.usb_width,args.usb_height) <= 0 or not math.isfinite(args.usb_fps) or args.usb_fps <= 0:
+        parser.error('USB dimensions and frame rate must be positive and finite.')
+    if args.test_camera and args.camera_source != 'usb':
+        parser.error('--test-camera requires --camera-source usb')
 
     # Import imaging libraries only for the camera app, not the math tests.
     import cv2
     import numpy as np
+    if args.test_camera:
+        from usb_camera import open_usb, benchmark
+        try:
+            benchmark(open_usb(cv2,args.usb_device,args.usb_width,args.usb_height,
+                               args.usb_fps,args.usb_fourcc))
+        except RuntimeError as error:
+            raise SystemExit(str(error))
+        return
 
     # Read saved calibration if present; never silently use an invalid file.
-    config_path = Path(args.config).expanduser()
+    default_config = 'usb_table_calibration.json' if args.camera_source == 'usb' else 'full_table_calibration.json'
+    config_path = Path(args.config).expanduser() if args.config else Path(__file__).with_name(default_config)
     config = {}
     if config_path.exists():
         try:
@@ -178,11 +199,23 @@ def main():
         'fast60': (4, 1280, 720, 60, [960, 540]),
     }
     sensor_mode, capture_width, capture_height, capture_fps, raw_size = modes[args.camera_mode]
+    capture_signature = {'source':'csi', 'camera':args.camera, 'mode':args.camera_mode}
+    if args.camera_source == 'usb':
+        capture_width, capture_height, capture_fps = args.usb_width,args.usb_height,args.usb_fps
+        # Choose an exact integer-ratio output no wider than 960 px. This is
+        # processing downsampling only: do not crop the USB frame.
+        divisor = math.gcd(capture_width,capture_height)
+        unit_w, unit_h = capture_width//divisor,capture_height//divisor
+        factor = max(1,min(divisor,960//unit_w))
+        raw_size = [unit_w*factor,unit_h*factor]
+        capture_signature = dict(source='usb',device=args.usb_device,width=capture_width,
+                                 height=capture_height,fps=capture_fps,fourcc=args.usb_fourcc)
     corners = config.get('corners', [None] * 4)
     # Matching image dimensions alone cannot prove the same field of view.
     if (args.recalibrate or config.get('raw_size') != raw_size
             or config.get('camera') != args.camera
-            or config.get('camera_mode') != args.camera_mode):
+            or config.get('camera_mode') != args.camera_mode
+            or config.get('capture_signature') != capture_signature):
         corners = [None] * 4
     names = ['1 FAR LEFT', '2 FAR RIGHT', '3 NEAR RIGHT', '4 NEAR LEFT']
     transform = None
@@ -267,7 +300,8 @@ def main():
         # JSON is plain text. It preserves settings across program restarts.
         data = {'dimensions': [width, length, diameter], 'corners': corners,
                 'raw_size': raw_size, 'camera': args.camera,
-                'camera_mode': args.camera_mode, 'hsv': hsv_values()}
+                'camera_mode': args.camera_mode, 'capture_signature':capture_signature,
+                'hsv': hsv_values()}
         config_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = config_path.with_suffix('.tmp')
         temporary.write_text(json.dumps(data, indent=2))
@@ -301,7 +335,16 @@ def main():
         'videoconvert ! video/x-raw,format=BGR ! '
         'appsink max-buffers=1 drop=true sync=false'
     )
-    camera = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+    if args.camera_source == 'usb':
+        from usb_camera import open_usb
+        try:
+            camera = open_usb(cv2,args.usb_device,capture_width,capture_height,
+                              capture_fps,args.usb_fourcc)
+        except RuntimeError as error:
+            cv2.destroyAllWindows()
+            raise SystemExit(str(error))
+    else:
+        camera = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
     if not camera.isOpened():
         camera.release()
         cv2.destroyAllWindows()
@@ -316,7 +359,7 @@ def main():
     notice = 'Place puck at a corner, click its center, then press its number.'
     print('Q quit | C recalibrate | 1..4 corners | ENTER apply | S save | G goal | H shot mode')
     print('Orange path and magenta contact X are IDEAL aim proposals, not motor commands.')
-    print(f'Camera {args.camera_mode}: {capture_width}x{capture_height} @ {capture_fps} FPS; '
+    print(f'Camera {args.camera_source}: {capture_width}x{capture_height} @ {capture_fps} requested FPS; '
           f'processing {raw_size[0]}x{raw_size[1]}. Drag window edges to resize.')
     print('Far end is y=0. Left/right rails reflect; near/far ends STOP the prediction.')
     try:
@@ -326,6 +369,11 @@ def main():
             if not ok:
                 print('Camera stopped delivering frames.')
                 break
+            if args.camera_source == 'usb':
+                if raw.shape[:2] != (capture_height,capture_width):
+                    print('USB frame dimensions changed; stopping to protect calibration.')
+                    break
+                raw = cv2.resize(raw,tuple(raw_size),interpolation=cv2.INTER_AREA)
             dt_frame = now - previous_time
             previous_time = now
             if dt_frame > 0:
@@ -415,7 +463,7 @@ def main():
                     velocity_ready = False
                     velocity = np.zeros(2)
 
-                label(topdown, f'{status} | FPS {fps:.1f}', 20, (0,255,0) if measured is not None else (0,255,255))
+                label(topdown, f'{status} | Loop FPS {fps:.1f}', 20, (0,255,0) if measured is not None else (0,255,255))
                 if position is not None:
                     label(topdown, f'Now X={position[0]:.1f} Y={position[1]:.1f} mm', 40)
                 if position is not None and velocity_ready:
