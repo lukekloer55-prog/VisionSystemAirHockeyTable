@@ -97,7 +97,9 @@ def main():
     parser.add_argument('--camera-source', choices=('csi','usb'), default='csi')
     parser.add_argument('--usb-device', default='/dev/video0')
     parser.add_argument('--usb-width', type=int, default=1280)
-    parser.add_argument('--usb-height', type=int, default=960)
+    parser.add_argument('--usb-height', type=int, default=720)
+    parser.add_argument('--usb-backend', choices=('gstreamer','v4l2'), default='gstreamer',
+                        help='USB capture backend; GStreamer uses software JPEG decoding')
     parser.add_argument('--usb-fps', type=float, default=120)
     parser.add_argument('--usb-fourcc', choices=('MJPG','YUYV'), default='MJPG')
     parser.add_argument('--test-camera', action='store_true',
@@ -143,7 +145,7 @@ def main():
         from usb_camera import open_usb, benchmark
         try:
             benchmark(open_usb(cv2,args.usb_device,args.usb_width,args.usb_height,
-                               args.usb_fps,args.usb_fourcc))
+                               args.usb_fps,args.usb_fourcc,args.usb_backend))
         except RuntimeError as error:
             raise SystemExit(str(error))
         return
@@ -339,7 +341,7 @@ def main():
         from usb_camera import open_usb
         try:
             camera = open_usb(cv2,args.usb_device,capture_width,capture_height,
-                              capture_fps,args.usb_fourcc)
+                              capture_fps,args.usb_fourcc,args.usb_backend)
         except RuntimeError as error:
             cv2.destroyAllWindows()
             raise SystemExit(str(error))
