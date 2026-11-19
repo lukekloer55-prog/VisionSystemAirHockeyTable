@@ -75,10 +75,7 @@ class SkillsEnv(gym.Env):
         self.model=arena_model(self.settings,mode);self.data=mujoco.MjData(self.model)
         self.action_space=spaces.Box(-1,1,(2,),np.float32)
         self.observation_space=spaces.Box(-np.inf,np.inf,(24,),np.float32)
-        self.workspace=AirHockeyEnv._workspace_samples(self)
-        # Remove singular targets and sample uniformly in table XY, not motor angle space.
-        self.workspace=np.array([p for p in self.workspace if self.target_valid(p)])
-        if len(self.workspace)<2:raise ValueError('No usable target workspace at this angle threshold')
+        self.workspace=self.target_workspace()
         self.commands=np.zeros((2,2));self.target=np.zeros(2);self.done=True
         self.joints=['left_motor','left_elbow','right_motor','right_elbow']
         self.active=[False,False];self.hit_budget=[self.curriculum.hit_bonus_budget]*2;self.hold=0.
@@ -87,15 +84,29 @@ class SkillsEnv(gym.Env):
         previous=self.curriculum
         self.curriculum=curriculum.validate()
         try:
-            samples=AirHockeyEnv._workspace_samples(self)
-            workspace=np.array([p for p in samples if self.target_valid(p)])
-            if len(workspace)<2:raise ValueError('No reachable targets at that angle threshold')
+            workspace=self.target_workspace()
         except Exception:
             self.curriculum=previous
             raise
         self.workspace=workspace
 
+    def target_workspace(self):
+        if self.mode=='movement':
+            # Targets cover the whole own half, even outside current motor reach.
+            r=self.settings.paddle_diameter_m/2
+            return np.array([[x,y] for x in (-WIDTH/2+r,WIDTH/2-r)
+                             for y in (-LENGTH/2+r,-r)])
+        samples=AirHockeyEnv._workspace_samples(self)
+        workspace=np.array([p for p in samples if self.target_valid(p)])
+        if len(workspace)<2:raise ValueError('No reachable targets at that angle threshold')
+        return workspace
+
     def target_valid(self, point):
+        if self.mode=='movement':
+            r=self.settings.paddle_diameter_m/2
+            point=np.asarray(point)
+            return bool(point.shape==(2,) and np.isfinite(point).all()
+                        and abs(point[0])<WIDTH/2-r and -LENGTH/2+r<point[1]<-r)
         try:q=motor_targets(np.asarray(point)-[0,BASE_Y])
         except ValueError:return False
         if np.max(np.abs(q))>self.settings.action_angle_rad:return False
@@ -138,7 +149,7 @@ class SkillsEnv(gym.Env):
         for _ in range(10000):
             p=self.np_random.uniform(lo,hi)
             if abs(p[0])<WIDTH/2-r and -LENGTH/2+r<p[1]<-r and self.target_valid(p) and np.linalg.norm(p-pad)>.04:return p
-        raise RuntimeError('Cannot sample reachable movement target')
+        raise RuntimeError('Cannot sample a movement target inside the robot half')
 
     def reset(self,*,seed=None,options=None):
         super().reset(seed=seed);mujoco.mj_resetData(self.model,self.data)
@@ -190,6 +201,11 @@ class SkillsEnv(gym.Env):
                 ids={self.model.geom(self._prefix(side)+'paddle').id,self.model.geom('puck_shape').id}
                 contact=any({c.geom1,c.geom2}==ids for c in self.data.contact[:self.data.ncon])
                 hits[side]|=contact and not self.active[side];self.active[side]=contact
+        return self.finish_step(old_dist,travel,hits)
+
+    def finish_step(self,old_dist,travel,hits):
+        """Shared reward/termination logic after CPU or experimental MJX integration."""
+        sides=2 if self.mode=='game' else 1;dt=self.settings.control_dt
         mujoco.mj_forward(self.model,self.data);self.steps+=1;self.travel+=travel
         pad,speed=self.paddle(0);angle=self.tip_angle(0)
         invalid=not np.isfinite(self.data.qpos).all() or not np.isfinite(self.data.qvel).all() or any(w.number for w in self.data.warning)

@@ -50,3 +50,11 @@ Each worker uses one PyTorch CPU thread; the learner defaults to one thread. Com
 
 ## Parallel league mode
 The panel now offers **League - parallel candidates + older champions**. Separate candidates learn concurrently, then undergo frozen head-to-head and historical-opponent evaluation. Start with two candidates and two or four total simulations. Leave live windows unchecked for headless training. See [LEAGUE_TRAINING.md](LEAGUE_TRAINING.md) for promotion, checkpoint, archive and background-service behavior.
+
+
+## Experimental MJX-JAX benchmark
+See [MJX_BENCHMARK.md](MJX_BENCHMARK.md) for a separate CUDA 12 environment and headless physics benchmark. This does not enable GPU league training. The original cylinder/box collision model is unsupported by MJX-JAX; an explicitly requested planar approximation is provided for validation only.
+
+
+## Whole-half movement targets
+Movement mode now samples the whole robot half, including near the robot end, without inverse-kinematics or motor-range filtering. Paddle boundary clearance remains. The arm still obeys its simulated limits; unreached targets time out. Existing same-geometry movement runs can resume with this broader target distribution.

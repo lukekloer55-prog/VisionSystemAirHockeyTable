@@ -46,7 +46,7 @@ This has **no round limit**. Ctrl+C or closing the training window saves and sto
 uv run --extra train python train_skills.py --mode movement --run-dir runs/movement-v1 --resume
 ```
 
-A pink sphere marks the target. Each episode samples a random reachable XY point on the robot's half. The paddle must get within 15 mm, slow below 0.12 m/s, and hold there for 0.12 seconds. Success ends that episode; the next episode resets the arm to its starting pose and samples another target. Episodes last at most five simulated seconds.
+A pink sphere marks the target. Each episode samples a random XY point across the entire robot's half, regardless of motor limits or inverse-kinematics reachability. The paddle must get within 15 mm, slow below 0.12 m/s, and hold there for 0.12 seconds. Success ends that episode; the next episode resets the arm to its starting pose and samples another target. Episodes last at most five simulated seconds.
 
 Rewards:
 - +15 for reaching and settling at the target.
@@ -56,7 +56,7 @@ Rewards:
 - A growing penalty when the angle between the two distal links meeting at the paddle falls below 35 degrees. The penalty is `-4 * dt * max(0, 1-angle/35)^2`. Collapse below 5 degrees fails the episode.
 - -20 for arm/physics failure. Torque limits and target slew limits still apply.
 
-Target sampling rejects unreachable positions and narrowing-angle singularities. **This does not give full half-table coverage.** The existing provisional +/-0.30 rad command limits and CAD elbow branch constrain the workspace. Its sampled bounding box is printed at startup; the actual reachable region is not rectangular. Joint ranges, masses and rotor inertia remain provisional. Do not widen them solely to increase reward.
+Movement target sampling is uniform over the whole robot half, with half a paddle diameter of clearance from the side walls, robot-end boundary and center line. Targets within 4 cm of the current paddle center are resampled. Motor range, elbow branch and narrow-link angle do not filter these targets. The printed target rectangle is **not a reachable-workspace claim**. Motor torque, joint limits, target slew and narrow-link penalties still apply to the simulated arm. Unreachable targets remain valid attempts and time out normally. Game pursuit retains its existing reachable-workspace logic.
 
 Use `--curriculum skills_settings.json` on a NEW run to adjust reward weights, timing, target tolerance or the angle threshold. Resume restores the saved settings. The new `training_ui.py` dashboard provides live reward controls for these modes. The original `reward_ui.py` panel still controls the older rally trainer.
 
@@ -181,3 +181,6 @@ Each worker uses one PyTorch CPU thread; the learner defaults to one thread. Com
 
 ## Parallel league mode
 The panel now offers **League - parallel candidates + older champions**. Separate candidates learn concurrently, then undergo frozen head-to-head and historical-opponent evaluation. Start with two candidates and two or four total simulations. Leave live windows unchecked for headless training. See [LEAGUE_TRAINING.md](LEAGUE_TRAINING.md) for promotion, checkpoint, archive and background-service behavior.
+
+
+Whole-half target update: existing same-geometry movement checkpoints may resume. The new distribution applies on episode reset and is recorded as `whole_robot_half_v1` in later snapshots. A new run name is optional if you want to distinguish this training stage. Very low success rates can be expected if many targets exceed the current actuator range; training cannot make a physically constrained arm reach those targets.

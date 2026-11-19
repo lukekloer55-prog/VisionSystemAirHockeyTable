@@ -1,0 +1,6 @@
+# Separate Linux experiment; do not install into the CPU trainer environment.
+mujoco==3.17.0
+mujoco-mjx==3.17.0
+jax[cuda12]==0.12.1
+gymnasium==1.2.3
+numpy>=1.26,<3

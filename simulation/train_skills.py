@@ -171,7 +171,8 @@ def main():
                 from parallel_training import make_parallel_env
                 train_env=make_parallel_env(mode,settings,curr,args.num_envs,args.render);envs.append(train_env)
             print('CPU simulation workers:',args.num_envs,flush=True)
-            print('Reachable target region (metres):',env.workspace.min(0), 'to',env.workspace.max(0),flush=True)
+            state['target_sampling']='whole_robot_half_v1' if mode=='movement' else 'reachable_pursuit_v1'
+            print('Whole-half target region (metres):' if mode=='movement' else 'Reachable pursuit region (metres):',env.workspace.min(0), 'to',env.workspace.max(0),flush=True)
             if args.resume:
                 for key in ('champion','a','b'):
                     if (folder/(key+'.zip')).exists():models[key]=PPO.load(folder/(key+'.zip'),env=train_env,device='cpu')
