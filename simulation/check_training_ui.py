@@ -2,6 +2,7 @@
 from dataclasses import asdict
 import io,json,tempfile,unittest,urllib.request,urllib.error,zipfile
 from pathlib import Path
+from unittest.mock import patch,MagicMock
 from skills_env import SkillsEnv,Curriculum,SCHEMA
 from skills_controls import controls,validate,atomic_json,apply_pending
 from training_ui import TrainingController,Dashboard
@@ -59,6 +60,29 @@ class Tests(unittest.TestCase):
   for label in ['', '   ', 'x'*101, 'bad\nname', None]:
    with self.assertRaises(ValueError):controller.action('rename',{'name':'example','display_name':label})
   with self.assertRaises(ValueError):controller.action('rename',{'name':'../outside','display_name':'Bad'})
+ def test_league_launch_and_budget(self):
+  controller=TrainingController(self.root)
+  values={k:getattr(Curriculum(),k) for k in controls('league')}
+  request=dict(name='league',mode='league',num_envs=4,candidates=2,values=values,render=False)
+  fake=MagicMock();fake.poll.return_value=None
+  with patch('training_ui.os.cpu_count',return_value=8),patch('training_ui.subprocess.Popen',return_value=fake) as launch,patch('training_ui.threading.Thread'):
+   with self.assertRaises(ValueError):controller.start({**request,'num_envs':3})
+   controller.start(request)
+   command=launch.call_args.args[0]
+   self.assertTrue(any(arg.endswith('train_league.py') for arg in command))
+   self.assertEqual(command[command.index('--num-envs')+1],'4')
+   self.assertEqual(command[command.index('--candidates')+1],'2')
+   self.assertNotIn('--render',command)
+ def test_league_rewards_wait_for_round(self):
+  run,store,state,models=self.make_run('league');env=SkillsEnv('game')
+  try:
+   state['phase']='league_train'
+   values={k:getattr(Curriculum(),k) for k in controls('league')};values['goal_reward']=55
+   atomic_json(run/'pending_rewards.json',{'revision':'league','values':values})
+   self.assertIsNone(apply_pending(env,state,models,store))
+   state['phase']='league_start';apply_pending(env,state,models,store)
+   self.assertEqual(env.curriculum.goal_reward,55)
+  finally:env.close()
  def test_http_and_export(self):
   run,store,state,models=self.make_run();controller=TrainingController(self.root);dashboard=Dashboard(controller)
   try:

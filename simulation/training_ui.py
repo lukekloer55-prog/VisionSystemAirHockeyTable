@@ -62,7 +62,7 @@ class TrainingController:
     record['stop_pending']=(path/'STOP').exists()
     if path==self.owned_run and self.process is not None:record['exit_code']=self.process.poll()
     runs.append(record)
-   return {'runs':runs,'root':str(self.root),'defaults':asdict(Curriculum()),'controls':{m:controls(m) for m in ('movement','selfplay')}}
+   return {'runs':runs,'root':str(self.root),'cpu_count':min(32,os.cpu_count() or 1),'defaults':asdict(Curriculum()),'controls':{m:controls(m) for m in ('movement','selfplay','league')}}
  def _logs(self,process,path):
   log=path.with_name(path.name+'.trainer.log')
   with process.stdout:
@@ -72,10 +72,18 @@ class TrainingController:
  def start(self,data):
   with self.lock:
    name=data['name'];path=self.path(name);mode=data['mode']
-   if mode not in ('movement','selfplay'):raise ValueError('Select a valid mode')
+   if mode not in ('movement','selfplay','league'):raise ValueError('Select a valid mode')
    if (self.process is not None and self.process.poll() is None) or any(r['running'] for r in self.state()['runs']):raise ValueError('Stop the active trainer and wait for its save before starting another mode')
-   args=[sys.executable,'-u',str(self.code/'train_skills.py'),'--mode',mode,'--run-dir',str(path)]
+   args=[sys.executable,'-u',str(self.code/('train_league.py' if mode=='league' else 'train_skills.py')),'--mode',mode,'--run-dir',str(path)]
+   workers=data.get('num_envs',1)
+   if isinstance(workers,bool) or not isinstance(workers,int) or not 1<=workers<=min(32,os.cpu_count() or 1):raise ValueError('Choose a worker count within available CPU cores (maximum 32)')
+   args+=['--num-envs',str(workers)]
    resume=data.get('resume',False)
+   if mode=='league':
+    candidates=data.get('candidates',2)
+    if isinstance(candidates,bool) or not isinstance(candidates,int) or not 2<=candidates<=8 or workers<candidates or workers%candidates:raise ValueError('League needs 2..8 candidates, and total workers must be divisible by candidates')
+    if resume and self.snapshot(path)[0]['candidates']!=candidates:raise ValueError('Resume keeps the saved candidate count')
+    args+=['--candidates',str(candidates)]
    if resume:
     state,_=self.snapshot(path)
     if state['mode']!=mode:raise ValueError('A saved run cannot change modes; create a new run using its model')
@@ -123,7 +131,7 @@ class TrainingController:
    if action=='rewards':
     state,_=self.snapshot(path);values=validate(state['mode'],data['values'])
     atomic_json(path/'pending_rewards.json',{'revision':uuid.uuid4().hex,'values':values})
-    return {'message':'Queued. Movement applies at the next learning batch; self-play applies at the next competition round. A stopped run applies on resume.'}
+    return {'message':'Queued. Movement applies at the next learning batch; self-play and league apply at the next competition round. A stopped run applies on resume.'}
    if action=='watch':
     self.snapshot(path)
     options={'cwd':str(self.code),'stdin':subprocess.DEVNULL}

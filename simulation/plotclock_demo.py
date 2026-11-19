@@ -18,8 +18,8 @@ from table_demo import build_scene, LENGTH
 GEOMETRY = json.loads(Path(__file__).with_name('plotclock_geometry.json').read_text())
 P = {name: np.array(value, dtype=float) for name, value in GEOMETRY['pivots'].items()}
 TORQUE = GEOMETRY['motor_torque_limit_nm']
-# Place the servo-pivot line 4 inches outside the near table edge.
-BASE_SETBACK = 4.0 * 0.0254
+# Place the servo axes behind the nearest base face, using confirmed mounting dimensions.
+BASE_SETBACK = GEOMETRY["base_face_setback_m"] + GEOMETRY["base_pivot_offset_from_near_face_m"]
 BASE_Y = -LENGTH / 2 - BASE_SETBACK
 ARM_Z = 0.10  # Elevated planar mechanism; actual mounting height is not supplied.
 

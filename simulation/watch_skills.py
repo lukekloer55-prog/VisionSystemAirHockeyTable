@@ -25,8 +25,8 @@ def main():
                 try:
                     state,folder=Store(args.run_dir).load()
                     if state['schema']!=SCHEMA or state['geometry']!=geometry:raise ValueError('Geometry/schema mismatch')
-                    a=PPO.load(folder/('a.zip' if (folder/'a.zip').exists() else 'champion.zip'),device='cpu')
-                    b=PPO.load(folder/('b.zip' if (folder/'b.zip').exists() else 'champion.zip'),device='cpu')
+                    a=PPO.load(folder/('candidate_0.zip' if (folder/'candidate_0.zip').exists() else 'a.zip' if (folder/'a.zip').exists() else 'champion.zip'),device='cpu')
+                    b=PPO.load(folder/('candidate_1.zip' if (folder/'candidate_1.zip').exists() else 'b.zip' if (folder/'b.zip').exists() else 'champion.zip'),device='cpu')
                     break
                 except FileNotFoundError:
                     if attempt==2:raise

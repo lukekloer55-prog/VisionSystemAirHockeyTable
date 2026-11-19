@@ -32,7 +32,8 @@ uv run python table_demo.py
 - Component3: fixed base, 457.2 mm (18 inches) between the motor pivot axes.
 - Component2 and Component5: left and right motor-driven links.
 - Component4 and Component1: left and right passive distal links.
-- Each of the four links: 584.2 mm (23 inches) between pivot axes.
+- Motor-to-elbow links: 584.2 mm (23 inches) between pivot axes.
+- Elbow-to-paddle links: 712.438 mm (28.04874 inches) between pivot axes, measured from Assembly3.stp. The user describes these as 29-inch physical bars.
 - Component6: controlled end pin, approximately 12.665 mm diameter.
 - Link section modeled as 25.4 x 25.4 mm.
 - The initial planar pivot coordinates are recovered from the assembled STEP hole axes, then rotated so the base is horizontal. Geometry is converted from millimetres to metres.
@@ -45,7 +46,7 @@ This is an analytical reconstruction with simple box links, not a tessellation o
 - The 3000 RPM rating is not used as a commanded arm speed or assumed maximum speed. Peak torque and the full torque-speed curve are not modeled.
 - 0.4 kg per link, 0.02 kg end pin, rotor inertia 0.0001 kg*m^2 per motor, damping, position-loop gains, and +/-0.35 rad base-joint travel around the CAD pose are estimates.
 - No actual T3DL electrical model, encoder delay, motor thermal model, hardware communication, or hardware safety controller is included.
-- The base servo-pivot line sits 101.6 mm (4 inches) behind the near edge of the 77 x 41.3125 inch table, as requested. The setback is measured to the pivot line, not the nearest face of the bar. The arm plane remains provisionally 100 mm above the table.
+- The nearest base face is 228.6 mm (9 inches) behind the inside near table edge. Centered servo axes in the 25.4 mm deep bar are therefore 241.3 mm (9.5 inches) behind that edge. Mounting height remains provisional at 100 mm.
 - The right elbow extends past the side rail in the original pose. Links have collisions disabled for this mechanism-only test. This does not establish physical table/rail clearance.
 - There is no paddle collider or puck in the arm demo yet. The green pin is the controlled attachment point. Paddle dimensions/mass, link masses, actual joint limits and mounting position are needed before useful strike or reachability tests.
 
@@ -57,4 +58,7 @@ MuJoCo connection constraint reference: https://mujoco.readthedocs.io/en/3.3.5/X
 
 ## Reach limits
 
-Each chain has two 23-inch links, so its maximum straightened reach is 46 inches from its servo axis. With the 4-inch setback and 18-inch servo spacing, the theoretical centerline reach is sqrt(46^2 - 9^2) - 4 = 41.11 inches into the table. Thus it cannot cover the full 77-inch table. The robot-half far corners are also outside the two-chain reach intersection: their distance from the opposite servo is about 51.82 inches, exceeding 46 inches. These are geometric upper bounds; singularities, actual joint limits, paddle radius and collision clearance further restrict usable reach. The demo retains its small provisional joint range and does not claim full-half-table coverage.
+Each chain has a 23-inch proximal link and a 28.04874-inch distal link. Maximum straightened reach is 51.04874 inches. With the 9.5-inch axis setback and 18-inch servo spacing, centerline reach is about 40.75 inches into the table. The opposite-servo distance to a far corner of the robot half is about 56.42 inches, so this still does not provide complete half-table coverage. Joint limits, singularities and paddle clearance further reduce usable reach.
+
+
+Assembly3 update: link lengths are measured from the STEP cylindrical axes in inch units. The exported near-straight pose is not used as the motor zero pose: the previous proximal home angles are retained and the distal-link circle intersection recomputed for a closed neutral pose. Old checkpoints fail the geometry compatibility check; begin a new run. Link mass remains an unmeasured 0.4 kg assumption.

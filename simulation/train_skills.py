@@ -111,10 +111,12 @@ def main():
     p.add_argument('--checkpoint-steps',type=int,default=2048,help='Checkpoint after this many learning steps')
     p.add_argument('--match-rallies',type=int,default=8,help='Even number, balanced serve/side pairs')
     p.add_argument('--seed',type=int,default=1)
-    p.add_argument('--threads',type=int,default=2)
+    p.add_argument('--threads',type=int,default=1)
+    p.add_argument('--num-envs',type=int,default=None,help='Parallel CPU simulations, 1..32; resume defaults to saved count')
     p.add_argument('--render',action='store_true')
     p.add_argument('--render-speed',type=float,default=1.)
     args=p.parse_args()
+    if args.num_envs is not None and not 1<=args.num_envs<=32:p.error('num-envs must be 1..32')
     if args.rounds<0 or args.steps_per_round<=0 or args.checkpoint_steps<=0 or args.threads<=0 or args.match_rallies<2 or args.match_rallies%2:p.error('Positive step/thread counts and an even match-rallies >=2 are required; rounds >=0')
     if not np.isfinite(args.render_speed) or args.render_speed<=0:p.error('render-speed must be finite and positive')
     if args.resume and (args.initial_model or args.initial_run or args.config or args.curriculum):p.error('Resume restores saved configuration; omit config/curriculum/initial-model')
@@ -141,7 +143,10 @@ def main():
                 if self.env.viewer is not None and not self.env.viewer.is_running():stopped[0]=True;return False
                 delay=self.env.settings.control_dt/args.render_speed-(time.monotonic()-self.last)
                 if delay>0:time.sleep(delay)
-                self.env.render();self.last=time.monotonic()
+                if args.num_envs>1:
+                    if not all(train_env.env_method('preview')):stopped[0]=True;return False
+                else:self.env.render()
+                self.last=time.monotonic()
             return not stop()
     geometry=json.loads(Path(__file__).with_name('plotclock_geometry.json').read_text())
     with RunLock(run/'trainer.lock'):
@@ -157,29 +162,36 @@ def main():
                 state=dict(schema=SCHEMA,geometry=geometry,settings=asdict(settings),curriculum=asdict(curr),mode=args.mode,
                            round=0,phase='train_a',trained=0,seed=args.seed,steps_per_round=args.steps_per_round,
                            checkpoint_steps=args.checkpoint_steps,match_rallies=args.match_rallies,total_steps=0)
+            args.num_envs=args.num_envs if args.num_envs is not None else state.get('num_envs',1)
+            state['num_envs']=args.num_envs
             mode='movement' if args.mode=='movement' else 'game'
             env=SkillsEnv(mode,settings,curr,'human' if args.render else None);envs.append(env)
+            train_env=env
+            if args.num_envs>1:
+                from parallel_training import make_parallel_env
+                train_env=make_parallel_env(mode,settings,curr,args.num_envs,args.render);envs.append(train_env)
+            print('CPU simulation workers:',args.num_envs,flush=True)
             print('Reachable target region (metres):',env.workspace.min(0), 'to',env.workspace.max(0),flush=True)
             if args.resume:
                 for key in ('champion','a','b'):
-                    if (folder/(key+'.zip')).exists():models[key]=PPO.load(folder/(key+'.zip'),device='cpu')
+                    if (folder/(key+'.zip')).exists():models[key]=PPO.load(folder/(key+'.zip'),env=train_env,device='cpu')
             else:
                 if args.initial_model:
                     initial_state=args.initial_model.parent/'state.json'
                     if not initial_state.exists():p.error('initial-model needs its adjacent state.json from this trainer')
                     source=json.loads(initial_state.read_text())
                     if source['schema']!=SCHEMA or source['geometry']!=geometry or source['settings']!=asdict(settings):p.error('Initial model geometry/schema/physical settings do not match')
-                    models['champion']=PPO.load(args.initial_model,device='cpu')
+                    models['champion']=PPO.load(args.initial_model,env=train_env,device='cpu')
                     source_run=args.initial_model.parent.parent
                     try:source_label=json.loads((source_run/'run_details.json').read_text(encoding='utf-8'))['display_name']
                     except (OSError,ValueError,KeyError,TypeError):source_label=source_run.name
                     state['lineage']=[*source.get('lineage',[]),{'run':source_run.name,'display_name':source_label,'mode':source['mode'],'checkpoint':args.initial_model.parent.name,'steps':source.get('total_steps',0)}]
-                else:models['champion']=PPO('MlpPolicy',env,device='cpu',seed=args.seed,verbose=0,n_steps=256,batch_size=64,n_epochs=5,learning_rate=3e-4,gamma=settings.gamma,policy_kwargs={'net_arch':[64,64]})
+                else:models['champion']=PPO('MlpPolicy',train_env,device='cpu',seed=args.seed,verbose=0,n_steps=256,batch_size=64,n_epochs=5,learning_rate=3e-4,gamma=settings.gamma,policy_kwargs={'net_arch':[64,64]})
                 folder=store.save(state,models)
             print(f'Continuous {args.mode} training: {run.resolve()}',flush=True)
             print('Ctrl+C, SIGTERM, closing the viewer, or creating STOP in the run folder saves and stops.',flush=True)
             print('Snapshots keep the latest three generations. No physical motor commands.',flush=True)
-            starting_round=state['round'];callback=Callback(env)
+            starting_round=state['round'];callback=Callback(env);opponent_round=None
             while not stop() and (args.rounds==0 or state['round']-starting_round<args.rounds):
                 from skills_controls import apply_pending
                 updated=apply_pending(env,state,models,store)
@@ -189,16 +201,24 @@ def main():
                     key=state['phase'][-1]
                     if key not in models:
                         # Separate optimizer states and exploration seeds; both begin at the champion.
-                        models[key]=PPO.load(folder/'champion.zip',device='cpu')
-                    learner=models[key];learner.set_env(env)
+                        models[key]=PPO.load(folder/'champion.zip',env=train_env,device='cpu')
+                    learner=models[key];learner.set_env(train_env)
                     env.opponent=models['champion'] if mode=='game' else None
+                    if args.num_envs>1:
+                        opponent_path=str((folder/'champion.zip').resolve()) if mode=='game' else None
+                        # Reload the frozen champion only when the competition round changes.
+                        if opponent_round==state['round']:opponent_path=worker_opponent_path
+                        train_env.env_method('configure_training',asdict(env.curriculum),opponent_path)
+                        worker_opponent_path=opponent_path;opponent_round=state['round']
                     learner.set_random_seed(state['seed']+state['round']*100003+(0 if key=='a' else 1009)+state['trained'])
                     remaining=state['steps_per_round']-state['trained']
                     steps=min(state['checkpoint_steps'],remaining)
-                    before=learner.num_timesteps
+                    before=learner.num_timesteps;batch_start=time.monotonic()
                     if steps>0:
                         learner.learn(total_timesteps=steps,callback=callback,reset_num_timesteps=False)
                     advanced=learner.num_timesteps-before;state['trained']+=advanced;state['total_steps']+=advanced
+                    state['training_steps_per_second']=advanced/max(time.monotonic()-batch_start,1e-9)
+                    print(f"Training throughput: {state['training_steps_per_second']:.1f} total steps/s across {args.num_envs} workers",flush=True)
                     if not stop() and state['trained']>=state['steps_per_round']:
                         state['trained']=0
                         if mode=='movement':
@@ -222,7 +242,7 @@ def main():
                     print(f"Match {state['round']}: A {result['scores'][0]} - B {result['scores'][1]}; retained {chosen}",flush=True)
             print('Stopped. Resume with the same mode/run-dir plus --resume. Remove STOP first if present.',flush=True)
         finally:
-            for e in envs:e.close()
+            for e in reversed(envs):e.close()
 
 if __name__=='__main__':main()
 

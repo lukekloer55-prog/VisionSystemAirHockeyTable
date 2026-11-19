@@ -157,3 +157,27 @@ Service reference: [systemd service restart and stop behavior](https://www.freed
 Select a saved run in the training panel, enter its **Run display name** under Saved results, and click **Rename run**. The display name is saved in `run_details.json` and included in exported results. The folder name, checkpoints, model weights and background service paths stay unchanged.
 
 To continue movement training in self-play, use **Use model in new run**, choose self-play and a new folder name, and start. The new run records the source training stage in its checkpoint history. Rename the new run to a descriptive name such as `Robot v1 - movement + self-play`. Existing runs do not gain retroactive history.
+
+
+### Parallel CPU simulations and live demonstration
+Set **Parallel CPU simulations** in the panel to 2 or 4 to start. Each spawned process owns an independent MuJoCo simulation, with distinct random seeds; their experience trains one PPO policy. Self-play candidates still train against the same frozen champion and are compared using paired, side-swapped matches. Match evaluation remains sequential.
+
+Check **Show every simulation in its own live window** to open one native window per worker on the training desktop. Arrange these windows side by side. They show the actual training workers, not checkpoint replays. Workers pause during PPO updates and winner matches; a separate match window may open during evaluation. Closing any worker window requests a save and stops all workers.
+
+For speed, leave the checkbox unchecked: no viewer is created and no frames are rendered. Stop/save and resume to switch rendering or worker count. The background service resumes the saved worker count and always omits rendering. `Watch saved model` is a separate optional replay.
+
+CLI demonstration:
+```bash
+uv run --extra train python train_skills.py --mode movement --run-dir runs/new-arms-movement --num-envs 4 --render
+```
+After stopping, resume without rendering:
+```bash
+uv run --extra train python train_skills.py --mode movement --run-dir runs/new-arms-movement --resume --num-envs 4
+```
+Use a new run with the updated geometry; older-arm checkpoints are intentionally incompatible. The default without a worker setting is one worker (or the saved count on resume). `--rounds 0`, the default, runs until stopped. Counts are total experience across workers, not steps per worker. PPO collects full 256-step rollouts per worker, so checkpoint and round step limits can be rounded upward to that batch size. Stop requests can save partial progress earlier. Increasing workers also increases rollout batch size and changes optimization behavior; speed and learning improvement are not guaranteed to scale together.
+
+Each worker uses one PyTorch CPU thread; the learner defaults to one thread. Compare the logged **Training throughput: ... total steps/s** for 1, 2 and 4 workers with rendering off. Startup, checkpoint writes and winner matches add overhead outside that measured learning-block rate. Leave CPU/memory headroom and avoid exceeding available logical CPUs. No GPU is required for these workers.
+
+
+## Parallel league mode
+The panel now offers **League - parallel candidates + older champions**. Separate candidates learn concurrently, then undergo frozen head-to-head and historical-opponent evaluation. Start with two candidates and two or four total simulations. Leave live windows unchecked for headless training. See [LEAGUE_TRAINING.md](LEAGUE_TRAINING.md) for promotion, checkpoint, archive and background-service behavior.

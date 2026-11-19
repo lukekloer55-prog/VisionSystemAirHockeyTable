@@ -31,7 +31,7 @@ WantedBy=default.target
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('action',choices=['start','stop','status'])
-    p.add_argument('--mode',choices=['movement','selfplay'],required=True)
+    p.add_argument('--mode',choices=['movement','selfplay','league'],required=True)
     p.add_argument('--run-dir',type=Path)
     args=p.parse_args()
     if not sys.platform.startswith('linux'):p.error('This helper is for the Linux simulation PC')
@@ -47,7 +47,7 @@ def main():
         if subprocess.run(['systemctl','--user','is-active','--quiet',unit]).returncode==0:p.error('Service already running; stop it first')
         root=Path(__file__).resolve().parent
         path=Path.home()/'.config/systemd/user'/unit;path.parent.mkdir(parents=True,exist_ok=True)
-        path.write_text(unit_text(sys.executable,root/'train_skills.py',root,args.mode,run))
+        path.write_text(unit_text(sys.executable,root/('train_league.py' if args.mode=='league' else 'train_skills.py'),root,args.mode,run))
         subprocess.run(['systemctl','--user','daemon-reload'],check=True)
         subprocess.run(['systemctl','--user','reset-failed',unit],check=False)
         subprocess.run(['systemctl','--user','enable','--now',unit],check=True)

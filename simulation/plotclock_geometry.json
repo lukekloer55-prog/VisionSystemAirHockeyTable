@@ -1,5 +1,5 @@
 {
-  "source": "PlotClock.step; assembled cylindrical hole axes projected into the linkage plane",
+  "source": "Assembly3.stp: measured planar pivot spacing; original proximal home angles retained with a recomputed closed tip pose, avoiding the nearly straight exported assembly pose",
   "units": "metres",
   "pivots": {
     "left_base": [
@@ -19,8 +19,8 @@
       0.4344007991743891
     ],
     "tip": [
-      0.13985993949162068,
-      0.76831936310863
+      0.16565963661343888,
+      0.9838087165257213
     ]
   },
   "components": {
@@ -36,5 +36,12 @@
   "assumed_link_mass_kg": 0.4,
   "assumed_rotor_inertia_kg_m2": 0.0001,
   "motor_torque_limit_nm": 2.4,
-  "drive_ratio": 1.0
+  "drive_ratio": 1.0,
+  "measured_distal_lengths_m": [
+    0.7124380128631568,
+    0.7124380128631472
+  ],
+  "base_face_setback_m": 0.2286,
+  "base_depth_m": 0.0254,
+  "base_pivot_offset_from_near_face_m": 0.0127
 }

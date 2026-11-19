@@ -26,7 +26,7 @@ GAME={
 }
 
 def controls(mode):
- if mode not in ('movement','selfplay'):raise ValueError('Unknown training mode')
+ if mode not in ('movement','selfplay','league'):raise ValueError('Unknown training mode')
  return {**COMMON,**(MOVEMENT if mode=='movement' else GAME)}
 
 def validate(mode,values):
@@ -48,6 +48,7 @@ def atomic_json(path,data):
 
 def apply_pending(env,state,models,store):
  """Training-thread transaction. Self-play waits until BOTH candidates can use new weights."""
+ if state['mode']=='league' and state['phase']!='league_start':return None
  if state['mode']=='selfplay' and not (state['phase']=='train_a' and state['trained']==0 and 'a' not in models):return None
  pending=store.path/'pending_rewards.json';processing=store.path/'applying_rewards.json'
  if not processing.exists():

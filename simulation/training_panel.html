@@ -7,15 +7,15 @@
 <div class="grid"><section class="card"><h2>Training mode & model</h2>
 <label for="run">Saved run</label><select id="run"><option value="">Create a new run</option></select>
 <div class="actions"><button id="new" class="secondary">New run</button></div><p id="editHelp"></p>
-<label for="mode">Mode</label><select id="mode"><option value="movement">Movement - reach random targets</option><option value="selfplay">Self-play - two models compete</option></select>
+<label for="mode">Mode</label><select id="mode"><option value="movement">Movement - reach random targets</option><option value="selfplay">Self-play - two models compete</option><option value="league">League - parallel candidates + older champions</option></select>
 <label for="name">New run name</label><input id="name" type="text" value="movement-v2" pattern="[A-Za-z0-9_-]+">
 <label for="initial">Start from model</label><select id="initial"><option value="">New untrained model</option></select>
-<label><input type="checkbox" id="render"> Show actual training in a MuJoCo window (slower)</label>
-<div class="actions"><button id="start">Start training</button><button id="stop" class="stop">Stop & save</button></div>
+<div id="leagueControls"><label for="candidates">League candidates</label><input id="candidates" type="number" min="2" max="8" step="1" value="2"><small>Total simulations must be divisible by candidates. Example: 2 candidates, 4 simulations = 2 simulations per candidate. Includes separate learning processes; leave CPU and memory headroom.</small></div><label for="workers">Parallel CPU simulations</label><input id="workers" type="number" min="1" max="32" step="1" value="1"><small>Try 2 or 4. Each worker simulates a separate table. Compare total steps/s to choose a count.</small><label><input type="checkbox" id="render"> Show every simulation in its own live window (slower)</label>
+<small>Unchecked: no viewers or frame rendering. Stop and resume to switch. Closing any live worker window stops and saves the run.</small><div class="actions"><button id="start">Start training</button><button id="stop" class="stop">Stop & save</button></div>
 <small>To change modes: stop training, choose the other mode, then create a new run. Existing weights stay saved.</small>
 </section><section class="card"><h2>Saved results</h2><label for="displayName">Run display name</label><input id="displayName" type="text" maxlength="100" placeholder="Example: Robot v1 - movement + self-play"><div class="actions"><button id="rename" class="secondary">Rename run</button></div><small>Changes the displayed name; keeps the folder and learned model intact.</small><p id="status">Connecting...</p><p id="root"></p>
 <div class="actions"><button id="save" class="secondary">Save checkpoint</button><button id="watch" class="secondary">Watch saved model</button><button id="export" class="secondary">Download results</button><button id="use" class="secondary">Use model in new run</button></div>
-<p>Resume continues learning from the saved parameters. Self-play automatically promotes the match winner. Download includes the committed models, settings and available event logs.</p>
+<p>Resume continues learning from the saved parameters. Self-play retains its match winner; league uses head-to-head and historical-opponent promotion checks. Download includes the committed models, settings and available event logs.</p>
 <details><summary>Training history, last match & recent episodes</summary><pre id="details">No saved results selected.</pre></details>
 </section></div>
 <div id="message" role="status">Choose a new or existing run to begin.</div>
@@ -37,31 +37,31 @@ function buildRewards(v){fields=state.controls[el('mode').value];el('rewards').r
  }
  el('rewardHelp').textContent=el('mode').value==='movement'?'Rewards apply between learning batches and are saved with the checkpoint. Targets stay within the reachable workspace.':'Changes wait until the next competition round so A and B learn with the same scoring. Goal reward also sets the conceded-goal penalty.';
 }
-function selectRun(){const run=selected();el('displayName').value=run?(run.display_name||run.name):'';if(run){el('mode').value=run.mode||'movement';el('name').value=run.name;buildRewards({...state.defaults,...run.curriculum});}else{el('name').value=el('mode').value+'-'+Date.now();buildRewards(state.defaults);}update();}
+function selectRun(){const run=selected();el('displayName').value=run?(run.display_name||run.name):'';if(run){el('workers').value=run.num_envs||1;el('candidates').value=run.candidates||2;el('mode').value=run.mode||'movement';el('name').value=run.name;buildRewards({...state.defaults,...run.curriculum});}else{el('name').value=el('mode').value+'-'+Date.now();buildRewards(state.defaults);}update();}
 function newRun(initial=''){selection='';el('run').value='';selectRun();el('initial').value=initial;el('name').focus();el('name').select();message(initial?'Choose a name for a new run using '+initial+' champion.':'New run: enter a name and choose a starting model.');}
 function syncOptions(id,empty){const select=el(id);if(document.activeElement===select)return;const desired=[["",empty],...state.runs.filter(r=>id!=='initial'||r.checkpoint).map(r=>[r.name,(r.display_name&&r.display_name!==r.name?r.display_name+' ['+r.name+']':r.name)+(r.running?' / running':'')])];if(JSON.stringify(Array.from(select.options,o=>[o.value,o.text]))===JSON.stringify(desired))return;const choice=select.value;select.replaceChildren(...desired.map(([value,text])=>new Option(text,value)));select.value=desired.some(([value])=>value===choice)?choice:'';}
-function update(){const run=selected(),exists=!!run,active=state.runs.some(r=>r.running);el('name').disabled=exists;el('initial').disabled=exists;el('rename').disabled=busy||!run?.checkpoint;el('displayName').disabled=!run?.checkpoint;
- el('editHelp').textContent=exists?'This is a saved run. Rename it under Saved results, or click New run to create another training stage.':(state.runs.some(r=>r.checkpoint)?'Enter a unique name. Start from model lists compatible saved movement/self-play checkpoints.':'Enter a unique name. No compatible saved checkpoints yet; use New untrained model for your first run.');
+function update(){const run=selected(),exists=!!run,active=state.runs.some(r=>r.running);el('leagueControls').hidden=el('mode').value!=='league';el('candidates').disabled=exists;el('name').disabled=exists;el('initial').disabled=exists;el('rename').disabled=busy||!run?.checkpoint;el('displayName').disabled=!run?.checkpoint;
+ el('editHelp').textContent=exists?'This is a saved run. Rename it under Saved results, or click New run to create another training stage.':(state.runs.some(r=>r.checkpoint)?'Enter a unique name. Start from model lists saved movement/self-play/league checkpoints.':'Enter a unique name. No compatible saved checkpoints yet; use New untrained model for your first run.');
  el('start').textContent=exists?'Resume training':'Start training';el('start').disabled=busy||active;el('stop').disabled=busy||!run?.running;
  for(const id of ['save','watch','export','use'])el(id).disabled=busy||!run?.checkpoint;
  el('apply').disabled=busy||!exists||!run.checkpoint;el('running').textContent=run?(run.running?(run.stop_pending?'Stopping':'Running'):'Stopped'):'New run';
  el('steps').textContent=(run?.total_steps||0).toLocaleString();el('round').textContent=run?.round||0;
  const episodes=run?.recent_episodes||[];el('rate').textContent=episodes.length?Math.round(100*episodes.filter(e=>e.success).length/episodes.length)+'%':'-';
  el('root').textContent='Runs folder: '+state.root;
- el('details').textContent=JSON.stringify({previous_training_stages:run?.lineage||[],current_mode:run?.mode,last_match:run?.last_match||null,recent_episodes:episodes.slice(-5)},null,2);
+ el('details').textContent=JSON.stringify({previous_training_stages:run?.lineage||[],current_mode:run?.mode,parallel_workers:run?.num_envs||1,total_steps_per_second:run?.training_steps_per_second,last_match:run?.last_match||null,league_results:run?.last_league||null,league_candidate_steps:run?.candidate_steps||null,league_evaluation_progress:run?.evaluation?.length||0,recent_episodes:episodes.slice(-5)},null,2);
  const reward=run?.reward_update;el('status').textContent=run?('Phase: '+(run.phase||'starting')+' / '+(run.checkpoint||'waiting for first checkpoint')+(run.save_pending?' / save queued':'')+(run.queued_rewards||run.applying_rewards?' / rewards queued':reward?' / rewards '+reward.status:'')+(run.exit_code?' / trainer exited with error '+run.exit_code+'; inspect its .trainer.log file':'')):'Create a run or select an existing checkpoint.';
  if(reward?.status==='rejected')el('status').textContent+=': '+reward.message;
  for(const key of Object.keys(fields)){const pending=run?.queued_rewards?.values||run?.applying_rewards?.values;el(key+'-applied').textContent=run?'Applied: '+(run.curriculum?.[key]??state.defaults[key])+(pending?' / queued: '+pending[key]:''):'Used when this new run starts';}
 }
-async function refresh(){try{const response=await fetch('/api/state');if(!response.ok)throw Error('Panel unavailable');const incoming=await response.json();const first=!state;state=incoming;
+async function refresh(){try{const response=await fetch('/api/state');if(!response.ok)throw Error('Panel unavailable');const incoming=await response.json();const first=!state;state=incoming;el('workers').max=state.cpu_count||32;
  syncOptions('run','Create a new run');syncOptions('initial','New untrained model');
  if(selection&&state.runs.some(r=>r.name===selection)){el('run').value=selection;selection='';selectRun();}else if(first)buildRewards(state.defaults);update();
  }catch(error){message('Control panel is offline. Restart training_ui.py to reconnect.');}}
 async function action(kind,data){busy=true;update();try{const response=await fetch('/api/'+kind,{method:'POST',headers:{'Content-Type':'application/json','X-Panel-Token':token},body:JSON.stringify(data)});const result=await response.json();if(!response.ok)throw Error(result.error);message(result.message);return true;}catch(error){message(error.message);return false;}finally{busy=false;await refresh();}}
 el('new').onclick=()=>newRun();
 el('run').onchange=()=>{selection='';selectRun();message(selected()?'Loaded '+selected().name+'. Edit rewards or resume this run.':'New run selected. Choose a mode and name.');};
-el('mode').onchange=()=>newRun(el('initial').value);
-el('start').onclick=async()=>{const name=el('run').value||el('name').value.trim();const ok=await action('start',{name,mode:el('mode').value,resume:!!el('run').value,initial_run:el('initial').value,render:el('render').checked,values:values()});if(ok)selection=name;};
+el('mode').onchange=()=>{if(el('mode').value==='league'&&Number(el('workers').value)<2)el('workers').value=2;newRun(el('initial').value);};
+el('start').onclick=async()=>{const name=el('run').value||el('name').value.trim();const ok=await action('start',{name,mode:el('mode').value,resume:!!el('run').value,num_envs:Number(el('workers').value),candidates:Number(el('candidates').value),initial_run:el('initial').value,render:el('render').checked,values:values()});if(ok)selection=name;};
 for(const id of ['stop','save','watch'])el(id).onclick=()=>action(id,{name:el('run').value});
 el('rename').onclick=()=>action('rename',{name:el('run').value,display_name:el('displayName').value});
 el('apply').onclick=()=>action('rewards',{name:el('run').value,values:values()});

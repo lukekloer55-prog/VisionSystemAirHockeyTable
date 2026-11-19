@@ -86,7 +86,7 @@ Use --config training_settings.json to supply physical parameters for a NEW run.
 
 ## Physical model and limits
 
-The model keeps the measured four 23-inch links, 18-inch servo spacing, and servo-pivot line 4 inches behind the near table edge. The two direct-drive motors have +/-2.4 N.m torque limits. The initial controller has conservative angle and target-speed limits. This mechanism does not cover the entire half-table.
+The model keeps the measured 23-inch proximal and 28.04874-inch distal pivot spacings, 18-inch servo spacing, and servo-pivot line 9.5 inches behind the inside near table edge. The two direct-drive motors have +/-2.4 N.m torque limits. The initial controller has conservative angle and target-speed limits. This mechanism does not cover the entire half-table.
 
 The full table is 41.3125 inches wide and 77 inches long, with centered 10-inch goals and a 2.823-inch puck. Coordinates use metres and seconds, with positive y toward the opponent. The agent sees exact simulator state and controls two motor target angles at 50 Hz; physics steps at 1,000 Hz.
 
