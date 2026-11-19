@@ -237,7 +237,7 @@ class AirHockeyEnv(gym.Env):
         return obs,float(reward),terminated,truncated,info
 
     def render(self):
-        """Launch a viewer only for explicit playback, never for headless training."""
+        """Launch a viewer for explicit human rendering; headless runs never open it."""
         if self.render_mode!='human':
             return
         if self.viewer is None:

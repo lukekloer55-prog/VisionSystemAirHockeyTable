@@ -2,6 +2,7 @@
 import argparse
 from datetime import datetime
 import json
+import math
 from pathlib import Path
 import shutil
 
@@ -16,9 +17,14 @@ def main():
     parser.add_argument('--run-dir',type=Path,help='New output folder; default is a timestamped runs/ folder')
     parser.add_argument('--resume',type=Path,help='Checkpoint ZIP to continue; uses its adjacent settings.json')
     parser.add_argument('--threads',type=int,default=2,help='CPU threads for the small policy network')
+    parser.add_argument('--render',action='store_true',help='Watch the actual training rollouts in a window')
+    parser.add_argument('--render-speed',type=float,default=1.0,
+                        help='Playback speed while training with --render: 1 is real time, 4 is four times faster')
     args=parser.parse_args()
     if args.steps<=0 or args.threads<=0:
         parser.error('steps and threads must be positive')
+    if not math.isfinite(args.render_speed) or args.render_speed<=0:
+        parser.error('render-speed must be positive and finite')
     # Imports here keep the basic movement demo independent of PyTorch.
     import torch
     from stable_baselines3 import PPO
@@ -49,7 +55,7 @@ def main():
     shutil.copyfile(geometry,run/'plotclock_geometry.json')
     (run/'run.json').write_text(json.dumps({'seed':args.seed,'requested_steps':args.steps,
         'algorithm':'PPO','device':'cpu','resume':str(args.resume) if args.resume else None},indent=2))
-    env=Monitor(AirHockeyEnv(settings),str(run/'train.monitor.csv'))
+    env=Monitor(AirHockeyEnv(settings,render_mode='human' if args.render else None),str(run/'train.monitor.csv'))
     eval_env=Monitor(AirHockeyEnv(settings),str(run/'eval.monitor.csv'))
     eval_env.reset(seed=args.seed+10000)
     model=None
@@ -64,13 +70,21 @@ def main():
         callbacks=[CheckpointCallback(save_freq=10000,save_path=str(run/'checkpoints'),name_prefix='policy'),
             EvalCallback(eval_env,best_model_save_path=str(run/'best'),log_path=str(run/'evaluation'),
                          eval_freq=10000,n_eval_episodes=10,deterministic=True)]
+        if args.render:
+            from live_training import LiveTrainingCallback
+            callbacks.insert(0,LiveTrainingCallback(env.unwrapped,args.render_speed))
         # Best/checkpoint folders carry settings too, so playback remains self-contained.
         for directory in ('best','checkpoints'):
             (run/directory).mkdir(exist_ok=True)
             settings.save(run/directory/'settings.json')
             shutil.copyfile(geometry,run/directory/'plotclock_geometry.json')
         print(f'Training on CPU. Results: {run.resolve()}')
-        print('Ctrl+C stops training and saves latest.zip. No window opens during training.')
+        print('Ctrl+C stops training and saves latest.zip.')
+        if args.render:
+            print('Live training window enabled. Closing it also stops and saves.')
+            print('The window may pause during neural-network updates and separate evaluation episodes.')
+        else:
+            print('Headless training. Add --render to watch training in a window.')
         try:
             model.learn(total_timesteps=args.steps,callback=callbacks,reset_num_timesteps=not bool(args.resume))
         except KeyboardInterrupt:

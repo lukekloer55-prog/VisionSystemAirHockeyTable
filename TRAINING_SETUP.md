@@ -18,7 +18,7 @@ Start training:
 uv run --extra train python train_policy.py --steps 300000 --run-dir runs/defender-v1
 ```
 
-This command ACTUALLY TRAINS. It opens no window; progress and episode statistics appear in the terminal. It uses a small PPO neural network on the CPU. The pyproject config explicitly selects CPU PyTorch wheels, avoiding the GTX 1070 Ti CUDA compatibility problem. The first run downloads dependencies. Use the Python 3.12 environment selected by uv.
+This command ACTUALLY TRAINS. By default it opens no window; add --render to watch the actual training rollouts. Progress and episode statistics appear in the terminal. It uses a small PPO neural network on the CPU. The pyproject config explicitly selects CPU PyTorch wheels, avoiding the GTX 1070 Ti CUDA compatibility problem. The first run downloads dependencies. Use the Python 3.12 environment selected by uv.
 
 A run directory must be new. If defender-v1 already exists, use a new name or omit --run-dir for an automatically named folder. PPO collects full 1024-step batches, so it can slightly exceed the requested step count.
 
@@ -94,3 +94,27 @@ Implementation references:
 - https://stable-baselines3.readthedocs.io/en/master/guide/custom_env.html
 - https://docs.astral.sh/uv/guides/integration/pytorch/
 - https://mujoco.readthedocs.io/en/3.3.5/XMLreference.html#equality-connect
+
+## Watch while training
+
+Start a new training run with a visible window:
+
+```bash
+uv run --extra train python train_policy.py --render --steps 300000 --run-dir runs/defender-visible
+```
+
+This displays the actual training environment, including exploratory actions and automatic episode resets. At the default --render-speed 1, rollout simulation is paced approximately in real time. 300,000 decisions at 50 Hz take at least about 100 minutes, plus neural-network updates and evaluations. Headless training is faster.
+
+To watch at up to four times normal speed, add --render-speed 4. The window may pause briefly during PPO updates and the separate headless evaluation episodes. This is normal, not a frozen simulation.
+
+Closing the window stops training and saves latest.zip, just like Ctrl+C. It does not silently leave training running. Use a new run directory for each invocation.
+
+To continue a previously saved run with the window:
+
+```bash
+uv run --extra train python train_policy.py --resume runs/defender-v1/latest.zip --render --steps 300000 --run-dir runs/defender-visible-resumed
+```
+
+An already running headless process cannot gain a window through these file changes. Stop it with Ctrl+C so it saves, then restart using --resume and --render.
+
+The file live_training.py supplies the viewer callback and is required for --render.

@@ -21,3 +21,5 @@ uv run python table_demo.py
 ```
 
 Training never starts automatically from either demonstration. It starts only when you run train_policy.py.
+
+To watch during training, add `--render` to the training command. See TRAINING_SETUP.md for speed and resume options.
