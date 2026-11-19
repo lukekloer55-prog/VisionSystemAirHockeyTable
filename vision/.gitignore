@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+MUJOCO_LOG.TXT
+
+runs/
+*.monitor.csv

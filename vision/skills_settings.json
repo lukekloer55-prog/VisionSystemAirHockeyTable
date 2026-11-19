@@ -1,0 +1,16 @@
+{
+  "target_tolerance_m": 0.015,
+  "target_hold_seconds": 0.12,
+  "target_speed_limit_m_s": 0.12,
+  "movement_seconds": 5.0,
+  "rally_seconds": 12.0,
+  "reach_reward": 15.0,
+  "progress_weight": 12.0,
+  "time_cost": 0.5,
+  "joint_travel_cost": 0.3,
+  "closing_cost": 4.0,
+  "min_tip_angle_deg": 35.0,
+  "failure_cost": 20.0,
+  "goal_reward": 30.0,
+  "contact_reward": 0.5
+}

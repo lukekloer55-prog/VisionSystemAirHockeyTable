@@ -1,23 +1,20 @@
-# Jetson air-hockey vision
+# Air hockey simulation and training
 
-USB camera shortcut (ELP, /dev/video1, MJPG, requested 1280x720 at 120 FPS):
+New: **random-target movement training and continuous two-arm self-play**. See [SKILLS_TRAINING.md](SKILLS_TRAINING.md) for setup, the separate viewer, checkpoint recovery and the Linux background service. These modes use `train_skills.py` and have no default round limit.
 
-```bash
-python3 usb_tracker.py --test-camera
-python3 usb_tracker.py
-```
+This is the CPU MuJoCo simulation for the direct-drive PlotClock arm. Start with TRAINING_SETUP.md for installation, live reward controls and saved-policy playback.
 
-See USB_120FPS_SETUP.md for installation, calibration, 1080p/4:3 modes, exposure, actual-rate measurement and troubleshooting. See SHOT_PLANNER_SETUP.md for the puck contact and bank-shot overlay.
-
-Camera-free checks:
+From the simulation repository folder:
 
 ```bash
-python3 check_usb.py
-python3 usb_tracker.py --self-test
+uv run --extra train python check_training.py
+uv run --extra train python train_policy.py --reward-ui --render --steps 300000
 ```
 
-CSI remains available through `python3 airhockey_shot_tracker.py`. This project does not train policies or command motors. Actual 120 FPS tracking has not been verified on the Jetson.
+The second command opens a MuJoCo training window and a browser with reward sliders. Click **Apply at next batch** to change scoring. Output is saved in a new timestamped `runs/rally-...` folder printed in the terminal. No existing run is overwritten.
 
-For the optional full-HD nvv4l2/BGRx capture path with stage timing, see USB_PERFORMANCE_SETUP.md. Run `python3 usb_1080p.py --test-camera`, then `python3 usb_1080p.py`. This requests 120 FPS; use measured rates to assess performance.
+The full-rally task requires a new policy. Old 20-observation defender checkpoints cannot be resumed in this 25-observation task. Keep those files; they are not deleted.
 
-For SSH tracking without GTK windows, use `python3 usb_1080p.py --headless --run-seconds 20` after saving matching calibration on the Jetson desktop. See USB_PERFORMANCE_SETUP.md for details and limitations.
+For the original arm movement demonstration, see PLOTCLOCK_SETUP.md and run `uv run python plotclock_demo.py`. For the table/puck demonstration, run `uv run python table_demo.py`. Neither demo starts training.
+
+This package does not modify the camera tracker or send real motor commands.
