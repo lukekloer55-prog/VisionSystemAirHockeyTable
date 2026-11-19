@@ -102,6 +102,8 @@ def main():
                         help='USB capture backend; GStreamer uses software JPEG decoding')
     parser.add_argument('--usb-decoder',choices=('software','nvv4l2'),default='software',help='nvv4l2: optional Jetson MJPG decoder with BGRx output')
     parser.add_argument('--display-fps',type=float,default=30,help='Refresh windows at this rate; 0 displays every frame')
+    parser.add_argument('--headless',action='store_true',help='Track through SSH without windows; requires matching saved calibration/HSV')
+    parser.add_argument('--run-seconds',type=float,default=0,help='Stop tracking after this duration; 0 runs until interrupted')
     parser.add_argument('--profile',action='store_true',help='Print average stage times and measured loop FPS every 3 seconds')
     parser.add_argument('--usb-fps', type=float, default=120)
     parser.add_argument('--usb-fourcc', choices=('MJPG','YUYV'), default='MJPG')
@@ -148,6 +150,10 @@ def main():
         parser.error('--usb-exposure-us requires USB and a positive multiple of 100 microseconds.')
     if args.camera_report and not args.test_camera:
         parser.error('--camera-report requires --test-camera.')
+    if not math.isfinite(args.run_seconds) or args.run_seconds<0:
+        parser.error('run-seconds must be nonnegative and finite.')
+    if args.headless and args.recalibrate:
+        parser.error('Calibrate on the desktop before using --headless.')
     if not math.isfinite(args.display_fps) or args.display_fps<0:
         parser.error('display-fps must be nonnegative and finite.')
     if args.usb_decoder=='nvv4l2' and (args.camera_source!='usb' or args.usb_backend!='gstreamer' or args.usb_fourcc!='MJPG'):
@@ -202,6 +208,8 @@ def main():
             print('Enter a positive number in millimetres.')
 
     dimensions = config.get('dimensions')
+    if args.headless and dimensions is None:
+        raise SystemExit('Headless tracking needs saved calibration. Run on the Jetson desktop, calibrate and press S first.')
     if dimensions is None or args.recalibrate:
         print('Calibrate the ENTIRE table. Far end / opponent goal is y=0.')
         # Defaults are your measurements converted from inches to millimetres.
@@ -273,19 +281,26 @@ def main():
             calibrating = True
             corners = [None] * 4
 
+    if args.headless and calibrating:
+        raise SystemExit('Saved calibration is missing, invalid or does not match this capture mode. Calibrate this mode on the Jetson desktop first.')
+
     # HSV sliders let you tune yellow under the actual table lighting.
     # Allow border dragging/maximization while preserving displayed image geometry.
     # The warped table keeps physical table proportions, not camera proportions.
     window_flags = cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO
-    cv2.namedWindow('Yellow mask', window_flags)
-    cv2.resizeWindow('Yellow mask', 600, 450)
+    if not args.headless:
+        cv2.namedWindow('Yellow mask', window_flags)
+        cv2.resizeWindow('Yellow mask', 600, 450)
     slider_names = ['H low', 'H high', 'S low', 'S high', 'V low', 'V high']
     saved_hsv = config.get('hsv', [20, 40, 90, 255, 70, 255])
-    for name, value, maximum in zip(slider_names, saved_hsv, [179, 179, 255, 255, 255, 255]):
-        cv2.createTrackbar(name, 'Yellow mask', int(value), maximum, lambda value: None)
+    if len(saved_hsv)!=6 or any(not isinstance(v,(int,float)) or not math.isfinite(v) or not 0<=v<=limit for v,limit in zip(saved_hsv,[179,179,255,255,255,255])):
+        raise SystemExit('Invalid saved HSV values; retune and save them on the desktop.')
+    if not args.headless:
+        for name, value, maximum in zip(slider_names, saved_hsv, [179, 179, 255, 255, 255, 255]):
+            cv2.createTrackbar(name, 'Yellow mask', int(value), maximum, lambda value: None)
 
     def hsv_values():
-        return [cv2.getTrackbarPos(name, 'Yellow mask') for name in slider_names]
+        return list(map(int,saved_hsv)) if args.headless else [cv2.getTrackbarPos(name, 'Yellow mask') for name in slider_names]
 
     def yellow_mask(image):
         # White pixels are yellow candidates. No closing by default: avoid merging.
@@ -342,16 +357,18 @@ def main():
         if event == cv2.EVENT_LBUTTONDOWN:
             selection['point'] = np.array([x, y], dtype=float)
             stable_centers.clear()
-    cv2.namedWindow('Camera - calibration', window_flags)
-    cv2.resizeWindow('Camera - calibration', raw_size[0], raw_size[1])
-    cv2.setMouseCallback('Camera - calibration', on_click)
+    shot_overlay=None
+    if not args.headless:
+        cv2.namedWindow('Camera - calibration', window_flags)
+        cv2.resizeWindow('Camera - calibration', raw_size[0], raw_size[1])
+        cv2.setMouseCallback('Camera - calibration', on_click)
 
-    # Add shot overlay without changing the existing detector or motion forecast.
-    from shot_overlay import ShotOverlay
-    shot_overlay = ShotOverlay(cv2, width, length, radius, scale, args.goal_config,
-                               args.shot_speed_mm_s, args.paddle_restitution,
-                               args.paddle_diameter_mm, args.goal_margin_mm,
-                               args.goal_width_mm)
+        # Add shot overlay without changing the existing detector or motion forecast.
+        from shot_overlay import ShotOverlay
+        shot_overlay = ShotOverlay(cv2, width, length, radius, scale, args.goal_config,
+                                   args.shot_speed_mm_s, args.paddle_restitution,
+                                   args.paddle_diameter_mm, args.goal_margin_mm,
+                                   args.goal_width_mm)
 
     # Choose an actual capture mode; stretching a 720p image cannot recover crops.
     pipeline = (
@@ -368,13 +385,13 @@ def main():
             camera = open_usb(cv2,args.usb_device,capture_width,capture_height,
                               capture_fps,args.usb_fourcc,args.usb_backend,usb_output_size,args.usb_decoder)
         except RuntimeError as error:
-            cv2.destroyAllWindows()
+            if not args.headless:cv2.destroyAllWindows()
             raise SystemExit(str(error))
     else:
         camera = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
     if not camera.isOpened():
         camera.release()
-        cv2.destroyAllWindows()
+        if not args.headless:cv2.destroyAllWindows()
         raise SystemExit('Could not open CSI camera. Close other camera apps first.')
 
     last_position = last_seen = None
@@ -384,17 +401,24 @@ def main():
     fps = 0.0
     previous_time = time.monotonic()
     notice = 'Place puck at a corner, click its center, then press its number.'
-    print('Q quit | C recalibrate | 1..4 corners | ENTER apply | S save | G goal | H shot mode')
+    if args.headless:
+        print('HEADLESS: saved calibration/HSV, no windows or shot overlays. Ctrl+C stops. PROFILE reports tracking.')
+    else:
+        print('Q quit | C recalibrate | 1..4 corners | ENTER apply | S save | G goal | H shot mode')
     print('Orange path and magenta contact X are IDEAL aim proposals, not motor commands.')
     print(f'Camera {args.camera_source}: {capture_width}x{capture_height} @ {capture_fps} requested FPS; '
           f'processing {raw_size[0]}x{raw_size[1]}. Drag window edges to resize.')
     print('Far end is y=0. Left/right rails reflect; near/far ends STOP the prediction.')
     from vision_timing import FrameProfiler,DisplaySchedule
-    profiler=FrameProfiler(args.profile)
+    profiler=FrameProfiler(args.profile or args.headless)
     display=DisplaySchedule(args.display_fps)
+    run_started=time.monotonic()
     expected_channels=4 if args.camera_source=='usb' and args.usb_decoder=='nvv4l2' else 3
     try:
         while True:
+            if args.run_seconds and time.monotonic()-run_started>=args.run_seconds:
+                print('Requested tracking duration reached.')
+                break
             profiler.begin()
             ok, raw = camera.read()
             profiler.mark('capture_wait')
@@ -410,7 +434,7 @@ def main():
             previous_time = now
             if dt_frame > 0:
                 fps = 0.9 * fps + 0.1 / dt_frame
-            render_frame=display.due(now)
+            render_frame=not args.headless and display.due(now)
             raw_display=raw.copy() if render_frame else None
             profiler.mark('prepare')
             if calibrating:
@@ -468,7 +492,7 @@ def main():
                     valid.append((score, center, candidate))
                 if valid:
                     _, measured, chosen = min(valid, key=lambda item: item[0])
-                    cv2.drawContours(topdown, [chosen[3]], -1, (0,255,0), 2)
+                    if render_frame:cv2.drawContours(topdown, [chosen[3]], -1, (0,255,0), 2)
 
                 position = None
                 status = 'LOST - no prediction'
@@ -490,13 +514,13 @@ def main():
                     last_position, last_seen = measured.copy(), now
                     position = measured
                     status = 'MEASURED'
-                    cv2.circle(topdown, pixel(position), 4, (0,255,0), -1)
+                    if render_frame:cv2.circle(topdown, pixel(position), 4, (0,255,0), -1)
                 elif last_seen is not None and age <= lost_timeout and velocity_ready:
                     estimate = predict_path(last_position, velocity, age, width, length, radius)
                     if estimate[4] is None:
                         position = np.array(estimate[0])
                         status = 'ESTIMATED ONLY'
-                        cv2.circle(topdown, pixel(position), 8, (0,255,255), 2)
+                        if render_frame:cv2.circle(topdown, pixel(position), 8, (0,255,255), 2)
                 else:
                     last_position = last_seen = None
                     velocity_ready = False
@@ -544,7 +568,7 @@ def main():
                 cv2.imshow('Camera - calibration', raw_display)
                 key=cv2.waitKey(1) & 0xff
             profiler.mark('gui')
-            if not calibrating:
+            if shot_overlay is not None and not calibrating:
                 shot_overlay.key(key)
             if key == ord('q'):
                 break
@@ -588,7 +612,7 @@ def main():
         print('Stopping tracker.')
     finally:
         camera.release()
-        cv2.destroyAllWindows()
+        if not args.headless:cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':

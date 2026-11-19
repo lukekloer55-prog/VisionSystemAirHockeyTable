@@ -68,3 +68,18 @@ Send both the camera benchmark result and several PROFILE lines while calibrated
 The OpenCV 4.6 GStreamer source supports BGRx as four-channel input: https://raw.githubusercontent.com/opencv/opencv/4.6.0/modules/videoio/src/cap_gstreamer.cpp . Vendor builds still need the actual test. If opening fails, retain the error output and use the explicit software fallback.
 
 Twelve camera-independent tests passed, including the accelerated caps/shape contract and display/profiling scheduling. Real OpenCV 4.10 image tests confirmed identical BGR/BGRx HSV results before and after warping with varying unused fourth-channel values. The actual calibrated tracking loop ran on synthetic four-channel images using real OpenCV image operations with mocked camera/GUI calls, including reduced display frequency and cleanup. Existing 87 trajectory and 81 shot/collision tests passed. Native Jetson appsink capture, live GUI and performance remain hardware-side verification.
+
+## SSH tracking without GTK windows
+
+Save calibration and yellow HSV settings by pressing S in the desktop tracker first, using the same device, capture resolution and processing resolution. Then this works through SSH:
+
+```bash
+cd ~/VisionSystemAirHockeyTable/vision
+python3 -u usb_1080p.py --headless --run-seconds 20
+```
+
+The run prints PROFILE lines approximately every three seconds and exits after 20 seconds. Omit `--run-seconds 20` to keep running until Ctrl+C. Duration is checked between frames; it cannot interrupt a blocked camera read. For a hard outer limit, prefix the command with `timeout -k 5s 30s`.
+
+Headless mode uses saved calibration and HSV thresholds (default yellow thresholds if no HSV was saved), performs perspective warp, detection and position/velocity estimation, and skips all HighGUI calls, image annotation and visualization-only shot planning. Missing, invalid or mismatched calibration stops with an explanation before camera access. Calibration must be done on the desktop. Headless mode does not send motor commands.
+
+The user's camera-only BGRx test achieved 119.7 delivered/decoded FPS at 1920x1080. Full tracking profiles showed 29–37 loop FPS, with roughly 15–22 ms spent in overlay/display and GUI and another 6–7 ms in warping. The headless run isolates tracking cost; it does not guarantee 120 tracking FPS or prove unique sensor exposures. Compare its PROFILE lines before changing languages or algorithms.
