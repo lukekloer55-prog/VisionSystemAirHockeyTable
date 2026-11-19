@@ -1,38 +1,24 @@
-# Experimental MJX movement training
+# GPU and shared CPU + GPU movement training
 
-Run the rail and paddle tests in MJX_BENCHMARK.md first. This optional trainer batches movement physics on MJX/JAX. It is not yet GPU league training or a dashboard backend. The normal CPU trainer is unchanged.
+See HYBRID_TRAINING.md for webpage controls, CPU-model import, shared experience, and live rendering.
 
-## Install on the Linux simulation PC
-
-From the simulation folder, with the separate .venv-mjx already created:
+Install the separate environment from the simulation directory:
 
 ```bash
+uv venv --python 3.12 .venv-mjx
 uv pip install --python .venv-mjx/bin/python -r requirements-mjx-training.txt
-.venv-mjx/bin/python train_mjx_movement.py --run-dir runs/mjx-movement-test --num-envs 16 --steps 8192
 ```
 
-GPU detection is mandatory by default; there is no silent CPU fallback. Initial JIT compilation can take minutes. Start with 16 worlds, then compare 32 or 64. More worlds can exhaust memory or be slower.
+Do not recreate an environment that already works. PyTorch is pinned to the CPU wheel so it does not conflict with JAX CUDA libraries. Physics runs on the GPU by default, with no silent CPU fallback.
 
-After the short test, resume indefinitely:
+Command-line example (two CPU workers plus 64 GPU worlds):
 
 ```bash
-.venv-mjx/bin/python train_mjx_movement.py --run-dir runs/mjx-movement-test --num-envs 16 --resume
+.venv-mjx/bin/python train_mjx_movement.py --run-dir runs/shared-movement-v1 --num-envs 64 --cpu-envs 2
 ```
 
-Ctrl+C or a file named STOP inside the run folder requests stopping and saving. The request is handled after the current compiled step returns. Explicit --resume clears STOP. Checkpoints are written at roughly 8192 experience steps (rounded to complete PPO rollouts), with atomic replacement of latest.zip. A process lock prevents simultaneous writers. A hard kill can lose work since the last checkpoint. Do not use this experimental path for unattended week-long training until stability and recovery have been tested on your GPU.
+Append `--initial-run runs/your-cpu-movement-run` only when creating a new run. Stop/save the source first. To continue an existing shared run use `--resume` with the desired GPU and CPU counts. `--steps 0` (default) continues until stopped; Ctrl+C saves. First compilation can take minutes. World counts alter rollout batch size and may affect learning as well as speed.
 
-## What runs where
+All worlds contribute to one shared PPO policy/optimizer. Policy and reward calculations still run on CPU. CPU simulation subprocesses run concurrently with GPU physics. No rendering occurs unless the live-view control is used. Self-play/league remain separate CPU trainers.
 
-- GPU: multiple MuJoCo worlds, 20 physics substeps per action, PD torque control, arm-travel accumulation.
-- CPU: reward/observation calculation, independent episode resets, SB3 PPO policy inference and updates, checkpoint writing.
-- No rendering or viewer is created.
-- Whole-half target sampling, rewards, hold time, motor limits and closing penalties reuse the CPU movement logic.
-- The temporary model uses the benchmark's coplanar sphere/frictionless-contact proxy. Movement puck collisions are disabled. Actual game collision validation is still required before league integration.
-
-Host/device transfers and CPU forward-kinematics/rewards may erase the GPU speed gain. Measure completed training steps per second after compilation. This is a compatibility-first bridge, not a promise of faster training or an all-GPU PPO implementation.
-
-## Checkpoints and limits
-
-Runs have a separate experimental manifest and latest.zip; they are not registered with the existing dashboard/league run store. --resume only accepts this trainer's runs with matching geometry. It does not import existing CPU run folders. The ZIP uses standard SB3 PPO format, but automatic cross-backend migration is not implemented. Existing saved CPU models are not modified.
-
-`--device cpu` is for developer tests only. It is not a GPU performance result. Default physical settings and default movement rewards are used; the dashboard reward sliders are not connected to this experimental trainer yet.
+Checkpoint replacement is atomic; a hard kill may lose work since the previous save. GPU numerical checks and benchmark results do not prove long-term stability. Test the combined configuration before unattended training.

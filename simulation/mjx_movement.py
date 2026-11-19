@@ -8,7 +8,7 @@ from skills_env import SkillsEnv
 from plotclock_demo import TORQUE, ARM_Z
 
 class MJXMovement(VecEnv):
-    def __init__(self,count=16,device='gpu',seed=1):
+    def __init__(self,count=16,device='gpu',seed=1,settings=None):
         import jax
         import jax.numpy as jp
         from mujoco import mjx
@@ -17,16 +17,10 @@ class MJXMovement(VecEnv):
         if not devices:raise RuntimeError('Requested device unavailable; no CPU fallback')
         self.device=devices[0]
         print('MJX physics device:',self.device.device_kind,flush=True)
-        self.envs=[SkillsEnv('movement') for _ in range(count)]
+        self.envs=[SkillsEnv('movement',settings=settings) for _ in range(count)]
         self.initial_seed=seed
-        for env in self.envs:
-            # Explicit benchmark proxy; movement has no puck collisions.
-            env.model.geom_condim[:]=1
-            for name in ('puck_shape','paddle'):
-                g=env.model.geom(name);r=float(g.size[0])
-                g.type=mujoco.mjtGeom.mjGEOM_SPHERE;g.size[:]=[r,0,0]
-                if name=='paddle':g.pos[2]=.006-ARM_Z
-                env.model.geom_rbound[g.id]=r;env.model.geom_aabb[g.id]=[0,0,0,r,r,r]
+        from hybrid_movement import apply_proxy
+        for env in self.envs:apply_proxy(env)
         model=self.envs[0].model
         with jax.default_device(self.device):
             self.mx=mjx.put_model(model,impl='jax')

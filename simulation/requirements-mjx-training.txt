@@ -1,3 +1,5 @@
+# CPU-only PPO avoids competing with JAX for CUDA/cuDNN dependencies.
+--find-links https://download.pytorch.org/whl/cpu/torch/
 -r requirements-mjx-cuda12.txt
 stable-baselines3==2.7.1
-torch==2.7.1
+torch==2.7.1+cpu

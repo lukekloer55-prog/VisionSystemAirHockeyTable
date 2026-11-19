@@ -1,5 +1,6 @@
 """Local browser control panel for movement and self-play training."""
 import argparse
+import gpu_panel
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 import io
@@ -47,6 +48,7 @@ class TrainingController:
    runs=[]
    for path in sorted(self.root.iterdir()):
     if not path.is_dir() or path.is_symlink() or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,79}',path.name):continue
+    if (path/'mjx_run.json').exists():continue
     record={'name':path.name,'running':self.running(path)}
     try:
      state,folder=self.snapshot(path)
@@ -72,8 +74,9 @@ class TrainingController:
  def start(self,data):
   with self.lock:
    name=data['name'];path=self.path(name);mode=data['mode']
+   if (path/'mjx_run.json').exists():raise ValueError('Open the GPU movement page for this run')
    if mode not in ('movement','selfplay','league'):raise ValueError('Select a valid mode')
-   if (self.process is not None and self.process.poll() is None) or any(r['running'] for r in self.state()['runs']):raise ValueError('Stop the active trainer and wait for its save before starting another mode')
+   if (self.process is not None and self.process.poll() is None) or any(self.running(p) for p in self.root.iterdir() if p.is_dir()):raise ValueError('Stop the active trainer and wait for its save before starting another mode')
    args=[sys.executable,'-u',str(self.code/('train_league.py' if mode=='league' else 'train_skills.py')),'--mode',mode,'--run-dir',str(path)]
    workers=data.get('num_envs',1)
    if isinstance(workers,bool) or not isinstance(workers,int) or not 1<=workers<=min(32,os.cpu_count() or 1):raise ValueError('Choose a worker count within available CPU cores (maximum 32)')
@@ -185,6 +188,9 @@ class Dashboard:
     route=urlsplit(self.path)
     try:
      if route.path=='/':return self.send(200,Path(__file__).with_name('training_panel.html').read_text(encoding='utf-8').replace('__TOKEN__',dashboard.token),'text/html; charset=utf-8')
+     if route.path=='/gpu':return self.send(200,Path(__file__).with_name('gpu_panel.html').read_text(encoding='utf-8').replace('__TOKEN__',dashboard.token),'text/html; charset=utf-8')
+     if route.path=='/api/gpu/state':return self.send(200,gpu_panel.state(controller))
+     if route.path=='/api/gpu/export':return self.send(200,gpu_panel.export(controller,parse_qs(route.query).get('name',[''])[0]),'application/zip','gpu-results.zip')
      if route.path=='/api/state':return self.send(200,controller.state())
      if route.path=='/api/export':
       name=parse_qs(route.query).get('name',[''])[0]
@@ -198,6 +204,7 @@ class Dashboard:
      if not 0<size<=16384:raise ValueError('Invalid request size')
      data=json.loads(self.rfile.read(size));action=self.path.removeprefix('/api/')
      if not isinstance(data,dict):raise ValueError('Expected an object')
+     if action.startswith('gpu/'):return self.send(200,gpu_panel.action(controller,action.split('/',1)[1],data))
      return self.send(200,controller.action(action,data))
     except (ValueError,OSError,KeyError,TypeError) as e:return self.send(400,{'error':str(e)})
   self.server=ThreadingHTTPServer(('127.0.0.1',port),Handler)
