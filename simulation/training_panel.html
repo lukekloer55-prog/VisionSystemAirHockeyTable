@@ -6,6 +6,7 @@
 <div class="tag">PlotClock / Simulation training</div><h1>Train, tune, and continue</h1><p>Choose a task, adjust what earns rewards, and keep each model's progress in its own run folder.</p>
 <div class="grid"><section class="card"><h2>Training mode & model</h2>
 <label for="run">Saved run</label><select id="run"><option value="">Create a new run</option></select>
+<div class="actions"><button id="new" class="secondary">New run</button></div><p id="editHelp"></p>
 <label for="mode">Mode</label><select id="mode"><option value="movement">Movement - reach random targets</option><option value="selfplay">Self-play - two models compete</option></select>
 <label for="name">New run name</label><input id="name" type="text" value="movement-v2" pattern="[A-Za-z0-9_-]+">
 <label for="initial">Start from model</label><select id="initial"><option value="">New untrained model</option></select>
@@ -37,7 +38,10 @@ function buildRewards(v){fields=state.controls[el('mode').value];el('rewards').r
  el('rewardHelp').textContent=el('mode').value==='movement'?'Rewards apply between learning batches and are saved with the checkpoint. Targets stay within the reachable workspace.':'Changes wait until the next competition round so A and B learn with the same scoring. Goal reward also sets the conceded-goal penalty.';
 }
 function selectRun(){const run=selected();if(run){el('mode').value=run.mode||'movement';el('name').value=run.name;buildRewards({...state.defaults,...run.curriculum});}else{el('name').value=el('mode').value+'-'+Date.now();buildRewards(state.defaults);}update();}
+function newRun(initial=''){selection='';el('run').value='';selectRun();el('initial').value=initial;el('name').focus();el('name').select();message(initial?'Choose a name for a new run using '+initial+' champion.':'New run: enter a name and choose a starting model.');}
+function syncOptions(id,empty){const select=el(id);if(document.activeElement===select)return;const desired=[["",empty],...state.runs.filter(r=>id!=='initial'||r.checkpoint).map(r=>[r.name,r.name+(r.running?' / running':'')])];if(JSON.stringify(Array.from(select.options,o=>[o.value,o.text]))===JSON.stringify(desired))return;const choice=select.value;select.replaceChildren(...desired.map(([value,text])=>new Option(text,value)));select.value=desired.some(([value])=>value===choice)?choice:'';}
 function update(){const run=selected(),exists=!!run,active=state.runs.some(r=>r.running);el('name').disabled=exists;el('initial').disabled=exists;
+ el('editHelp').textContent=exists?'This is a saved run. Click New run to edit the name and starting model, or Resume training to continue this saved run.':(state.runs.some(r=>r.checkpoint)?'Enter a unique name. Start from model lists compatible saved movement/self-play checkpoints.':'Enter a unique name. No compatible saved checkpoints yet; use New untrained model for your first run.');
  el('start').textContent=exists?'Resume training':'Start training';el('start').disabled=busy||active;el('stop').disabled=busy||!run?.running;
  for(const id of ['save','watch','export','use'])el(id).disabled=busy||!run?.checkpoint;
  el('apply').disabled=busy||!exists||!run.checkpoint;el('running').textContent=run?(run.running?(run.stop_pending?'Stopping':'Running'):'Stopped'):'New run';
@@ -50,17 +54,18 @@ function update(){const run=selected(),exists=!!run,active=state.runs.some(r=>r.
  for(const key of Object.keys(fields)){const pending=run?.queued_rewards?.values||run?.applying_rewards?.values;el(key+'-applied').textContent=run?'Applied: '+(run.curriculum?.[key]??state.defaults[key])+(pending?' / queued: '+pending[key]:''):'Used when this new run starts';}
 }
 async function refresh(){try{const response=await fetch('/api/state');if(!response.ok)throw Error('Panel unavailable');const incoming=await response.json();const first=!state;state=incoming;
- for(const [id,empty] of [['run','Create a new run'],['initial','New untrained model']]){const choice=el(id).value;el(id).replaceChildren(new Option(empty,''));for(const r of state.runs){if(id==='initial'&&!r.checkpoint)continue;el(id).add(new Option(r.name+(r.running?' / running':''),r.name));}el(id).value=choice;}
+ syncOptions('run','Create a new run');syncOptions('initial','New untrained model');
  if(selection&&state.runs.some(r=>r.name===selection)){el('run').value=selection;selection='';selectRun();}else if(first)buildRewards(state.defaults);update();
  }catch(error){message('Control panel is offline. Restart training_ui.py to reconnect.');}}
 async function action(kind,data){busy=true;update();try{const response=await fetch('/api/'+kind,{method:'POST',headers:{'Content-Type':'application/json','X-Panel-Token':token},body:JSON.stringify(data)});const result=await response.json();if(!response.ok)throw Error(result.error);message(result.message);return true;}catch(error){message(error.message);return false;}finally{busy=false;await refresh();}}
-el('run').onchange=()=>{selectRun();message(selected()?'Loaded '+selected().name+'. Edit rewards or resume this run.':'New run selected. Choose a mode and name.');};
-el('mode').onchange=()=>{el('run').value='';selectRun();message('New '+el('mode').value+' run selected. Stop any active trainer before starting it.');};
+el('new').onclick=()=>newRun();
+el('run').onchange=()=>{selection='';selectRun();message(selected()?'Loaded '+selected().name+'. Edit rewards or resume this run.':'New run selected. Choose a mode and name.');};
+el('mode').onchange=()=>newRun(el('initial').value);
 el('start').onclick=async()=>{const name=el('run').value||el('name').value.trim();const ok=await action('start',{name,mode:el('mode').value,resume:!!el('run').value,initial_run:el('initial').value,render:el('render').checked,values:values()});if(ok)selection=name;};
 for(const id of ['stop','save','watch'])el(id).onclick=()=>action(id,{name:el('run').value});
 el('apply').onclick=()=>action('rewards',{name:el('run').value,values:values()});
 el('defaults').onclick=()=>{setValues(state.defaults);message('Defaults loaded. Apply them or start a new run to use them.');};
 el('export').onclick=()=>{window.location.href='/api/export?name='+encodeURIComponent(el('run').value);};
-el('use').onclick=()=>{const name=el('run').value;el('run').value='';selectRun();el('initial').value=name;message('New run will start from '+name+' champion. Choose the desired mode and a new run name.');};
+el('use').onclick=()=>newRun(el('run').value);
 refresh();setInterval(refresh,2000);
 </script></body></html>
