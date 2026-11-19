@@ -1,0 +1,40 @@
+{
+  "source": "PlotClock.step; assembled cylindrical hole axes projected into the linkage plane",
+  "units": "metres",
+  "pivots": {
+    "left_base": [
+      -0.22860000000000003,
+      1.1368683772161603e-16
+    ],
+    "right_base": [
+      0.22860000000000005,
+      1.1368683772161603e-16
+    ],
+    "left_elbow": [
+      -0.4047812890089807,
+      0.5570007122106186
+    ],
+    "right_elbow": [
+      0.619222049654976,
+      0.4344007991743891
+    ],
+    "tip": [
+      0.13985993949162068,
+      0.76831936310863
+    ]
+  },
+  "components": {
+    "base": "Component3",
+    "left_proximal": "Component2",
+    "left_distal": "Component4",
+    "right_proximal": "Component5",
+    "right_distal": "Component1",
+    "end_pin": "Component6"
+  },
+  "link_width": 0.0254,
+  "link_thickness": 0.0254,
+  "assumed_link_mass_kg": 0.4,
+  "assumed_rotor_inertia_kg_m2": 0.0001,
+  "motor_torque_limit_nm": 2.4,
+  "drive_ratio": 1.0
+}

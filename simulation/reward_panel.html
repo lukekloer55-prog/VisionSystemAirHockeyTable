@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Air hockey · Training rewards</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#e7edf7;background:#101722;color-scheme:dark}body{max-width:1150px;margin:0 auto;padding:30px 24px}h1{margin:4px 0 10px;font-size:30px}p{color:#b5c3d7;line-height:1.5}.label{color:#75d8bb;text-transform:uppercase;letter-spacing:2px;font-size:12px}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:24px 0}.metric,.card{background:#192333;border:1px solid #2d3d52;border-radius:12px;padding:16px}.metric strong{display:block;font-size:26px;margin-top:6px}.metric span{color:#b5c3d7;font-size:13px}#controls{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.card label{display:block;font-weight:600;margin-bottom:8px}.category{font-size:12px;color:#93a9c6;margin-bottom:10px}.row{display:flex;gap:16px;align-items:center}input[type=range]{flex:1;min-width:50px;accent-color:#75d8bb}input[type=number]{width:85px;background:#101722;color:white;border:1px solid #566a83;border-radius:6px;padding:8px;font-size:16px}.applied{font-size:12px;color:#b5c3d7;margin-top:8px}.actions{position:sticky;bottom:0;background:#101722ef;border-top:1px solid #41536d;padding:16px 0;display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}button{cursor:pointer;background:#75d8bb;color:#101722;border:0;border-radius:8px;padding:12px 16px;font-weight:700}button.secondary{background:#29384c;color:#e7edf7}#status{padding:14px;border-left:3px solid #75d8bb;background:#192333;margin:16px 0}#message{color:#ffd28a;min-height:24px}details{margin-top:20px}pre{white-space:pre-wrap;color:#bccce2}small{color:#b5c3d7}@media(max-width:650px){#controls{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}body{padding:20px 12px}}
+</style></head><body>
+<div class="label">PlotClock · Local training control</div><h1>Shape what the arm learns</h1>
+<p>Score goals, recover missed pucks, and keep rallies going. Penalty values are positive amounts that get <b>subtracted</b>. Changes apply between training batches, not instantly.</p>
+<div class="metrics"><div class="metric"><span>Training steps</span><strong id="steps">—</strong></div><div class="metric"><span>Goals scored</span><strong id="scored">—</strong></div><div class="metric"><span>Goals conceded</span><strong id="conceded">—</strong></div><div class="metric"><span>Finished rallies</span><strong id="rallies">—</strong></div></div>
+<div id="status" role="status">Connecting to training…</div><div id="controls"></div>
+<div class="actions"><button id="apply">Apply at next batch</button><button class="secondary" id="defaults">Set sliders to defaults</button><button class="secondary" id="export">Download reward JSON</button></div>
+<div id="message" role="alert"></div><small>Closing this browser tab does not stop training. Closing the MuJoCo training window or pressing Ctrl+C stops training and saves the policy.</small>
+<details><summary>Last rally reward breakdown</summary><pre id="breakdown">No finished rally yet.</pre></details>
+<p><small id="run"></small></p>
+<script>
+const token='__PANEL_TOKEN__'; let ready=false, controls={}, defaults={};
+const el=id=>document.getElementById(id);
+function values(){const result={};for(const key of Object.keys(controls))result[key]=Number(el(key+'-number').value);return result;}
+function setValues(v){for(const [key,value] of Object.entries(v)){el(key+'-number').value=value;el(key+'-slider').value=value;}}
+function build(data){controls=data.controls;defaults=data.defaults;for(const [key,[name,group,min,max,step]] of Object.entries(controls)){
+ const card=document.createElement('div');card.className='card';
+ const label=document.createElement('label');label.htmlFor=key+'-slider';label.textContent=name;
+ const cat=document.createElement('div');cat.className='category';cat.textContent=group;
+ const row=document.createElement('div');row.className='row';
+ for(const type of ['range','number']){const input=document.createElement('input');input.type=type;input.min=min;input.max=max;input.step=step;input.id=key+(type==='range'?'-slider':'-number');input.value=data.active[key];input.setAttribute('aria-label',name);input.addEventListener('input',()=>{el(key+(type==='range'?'-number':'-slider')).value=input.value;el('message').textContent='Sliders edited. Click Apply to queue these values.';});row.append(input);}
+ const applied=document.createElement('div');applied.className='applied';applied.id=key+'-applied';
+ card.append(cat,label,row,applied);el('controls').append(card);
+ }ready=true;}
+async function refresh(){try{const response=await fetch('/api/state');if(!response.ok)throw Error('Server unavailable');const data=await response.json();if(!ready)build(data);
+ el('steps').textContent=data.metrics.steps.toLocaleString();el('scored').textContent=data.metrics.goals_scored;el('conceded').textContent=data.metrics.goals_conceded;el('rallies').textContent=data.metrics.rallies;
+ el('status').textContent=data.status;el('run').textContent='Run folder: '+data.run_dir;
+ for(const key of Object.keys(controls))el(key+'-applied').textContent='Applied: '+data.active[key]+(data.pending?' · queued: '+data.pending.values[key]:'');
+ if(data.metrics.last_reward_breakdown)el('breakdown').textContent=JSON.stringify(data.metrics.last_reward_breakdown,null,2);
+ }catch(error){el('status').textContent='Training server is offline. If training ended, your saved files remain in the run folder.';}}
+el('apply').onclick=async()=>{if(!ready)return;try{const response=await fetch('/api/rewards',{method:'POST',headers:{'Content-Type':'application/json','X-Panel-Token':token},body:JSON.stringify({values:values()})});const data=await response.json();if(!response.ok)throw Error(data.error);el('message').textContent='Queued. At real-time viewing speed, a 1,024-step batch takes about 20 seconds, plus updates/evaluation.';await refresh();}catch(error){el('message').textContent=error.message;}};
+el('defaults').onclick=()=>{if(ready){setValues(defaults);el('message').textContent='Defaults loaded into sliders. Click Apply to use them.';}};
+el('export').onclick=()=>{if(!ready)return;const url=URL.createObjectURL(new Blob([JSON.stringify(values(),null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='reward_settings.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+refresh();setInterval(refresh,1000);
+</script></body></html>
