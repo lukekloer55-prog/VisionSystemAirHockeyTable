@@ -1,5 +1,7 @@
 # Air hockey simulation and training
 
+New: **random-target movement training and continuous two-arm self-play**. See [SKILLS_TRAINING.md](SKILLS_TRAINING.md) for setup, the separate viewer, checkpoint recovery and the Linux background service. These modes use `train_skills.py` and have no default round limit.
+
 This is the CPU MuJoCo simulation for the direct-drive PlotClock arm. Start with TRAINING_SETUP.md for installation, live reward controls and saved-policy playback.
 
 From the simulation repository folder:

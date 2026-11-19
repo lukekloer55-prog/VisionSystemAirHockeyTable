@@ -100,7 +100,7 @@ class Settings:
         return replace(self,**updates).validate()
 
 
-def training_model(settings):
+def training_model(settings, return_xml=False):
     """Add a physical paddle and puck, and split the end rails around 10-inch goals."""
     _,_,xml=make_model()
     root=ET.fromstring(xml);world=root.find('worldbody')
@@ -134,7 +134,8 @@ def training_model(settings):
                 pos=f'{side*(inner+outer)/2} {sign*(LENGTH/2+.015)} .025',
                 size=f'{(outer-inner)/2} .015 .025',rgba='.15 .25 .45 1',
                 friction='0 0 0',solref='.004 .5')
-    return mujoco.MjModel.from_xml_string(ET.tostring(root,encoding='unicode'))
+    xml = ET.tostring(root,encoding='unicode')
+    return xml if return_xml else mujoco.MjModel.from_xml_string(xml)
 
 
 class AirHockeyEnv(gym.Env):
