@@ -1,0 +1,15 @@
+{
+  "paddle_diameter_m": 0.1,
+  "paddle_mass_kg": 0.15,
+  "link_mass_kg": 0.4,
+  "puck_mass_kg": 0.02,
+  "min_puck_speed_m_s": 0.6,
+  "max_puck_speed_m_s": 0.9,
+  "spawn_half_width_m": 0.12,
+  "spawn_center_x_m": 0.16,
+  "episode_seconds": 6.0,
+  "control_dt": 0.02,
+  "target_slew_rad_s": 0.75,
+  "action_angle_rad": 0.3,
+  "gamma": 0.99
+}

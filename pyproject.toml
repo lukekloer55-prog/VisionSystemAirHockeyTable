@@ -1,7 +1,18 @@
 [project]
 name = "airhockey-mujoco"
-version = "0.1.0"
-description = "A beginner-friendly air hockey table simulation"
+version = "0.2.0"
+description = "Measured PlotClock linkage and CPU air hockey defender training"
 requires-python = ">=3.12,<3.13"
-dependencies = ["mujoco>=3.3,<4"]
+dependencies = ["mujoco==3.17.0", "numpy>=1.26,<3"]
 
+[project.optional-dependencies]
+train = ["gymnasium==1.2.3", "stable-baselines3==2.7.1", "torch==2.7.1"]
+
+# Explicit CPU wheels avoid the older GTX 1070 Ti CUDA compatibility problem.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
