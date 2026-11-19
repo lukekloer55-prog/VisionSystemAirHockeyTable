@@ -16,6 +16,24 @@ uv run --extra train python check_skills.py
 
 If your checkout has a different name, change only the first `cd` path.
 
+## Browser control panel
+
+After updating, stop/restart any old trainer so it loads the new reward-control code. On the simulation PC desktop:
+
+```bash
+uv run --extra train python training_ui.py
+```
+
+The browser opens automatically. Select Movement or Self-play, enter a new run name, adjust sliders, and click Start training. To continue a saved model, select its run and click Resume training. Stop & save requests a graceful stop; wait for Stopped before switching modes. Use model in new run selects the saved champion as the initial model; it does not overwrite the source run. Training has no default round limit.
+
+Movement sliders include reaching the target, progress, elapsed time, actual joint travel, narrow-link angle/penalty and failure. Self-play additionally exposes goals/concessions, useful contact, pursuit and contact-bonus budget. Click Apply reward changes. Movement changes apply between learning batches; self-play changes wait until the next competition round, before either candidate trains. Queued and applied values are shown separately and applied changes are recorded in checkpoint metadata and event logs. For a stopped run, queued changes take effect on resume. Timing, target tolerance and physical geometry remain in settings files.
+
+Save checkpoint queues a save at the next training boundary; it does not interrupt a match. Download results exports the last committed snapshot (model weights, optimizer states, settings and available event logs). Extracting the downloaded folder inside `runs/` restores it as a selectable run. Watch saved model opens a separate MuJoCo replay window on the simulation PC desktop. Recent metrics refresh after a checkpoint, not every physics step.
+
+Closing the browser tab leaves the trainer running. Closing the dashboard process with Ctrl+C stops and saves trainers it launched. The dashboard is not itself a crash/reboot supervisor: use the Linux service below for the unattended week. It can also edit/stop a running service when both use the same runs folder. In that case closing the dashboard leaves the service alone. Do not launch a second trainer for the same run.
+
+Use `--runs-dir /absolute/path/to/runs` to select another run collection. The dashboard only lists compatible movement/self-play runs directly inside that folder; old rally policies are not compatible. It listens on localhost only. For SSH, launch with `--no-browser --port 8766` on the simulation PC and forward that port with SSH, then open `http://127.0.0.1:8766` locally.
+
 ## Train movement first
 
 ```bash
@@ -40,7 +58,7 @@ Rewards:
 
 Target sampling rejects unreachable positions and narrowing-angle singularities. **This does not give full half-table coverage.** The existing provisional +/-0.30 rad command limits and CAD elbow branch constrain the workspace. Its sampled bounding box is printed at startup; the actual reachable region is not rectangular. Joint ranges, masses and rotor inertia remain provisional. Do not widen them solely to increase reward.
 
-Use `--curriculum skills_settings.json` on a NEW run to adjust reward weights, timing, target tolerance or the angle threshold. Resume restores the saved settings. Existing reward-panel sliders control the older rally trainer, not these modes. No extra reward UI has been added here.
+Use `--curriculum skills_settings.json` on a NEW run to adjust reward weights, timing, target tolerance or the angle threshold. Resume restores the saved settings. The new `training_ui.py` dashboard provides live reward controls for these modes. The original `reward_ui.py` panel still controls the older rally trainer.
 
 ## Two-model competition
 

@@ -26,3 +26,9 @@ Additional checks passed: resumed the full-rally checkpoint for 1,024 steps with
 - Existing full-rally physics/reward regression suite passed after the optional XML-export refactor in training_model.
 - Both scenes were rendered offscreen and visually inspected. Native live-viewer interaction and Linux systemd execution were not exercised on this Windows test host.
 - No trained champion, week-long soak run or physical hardware validation is supplied. The package contains source code and configuration; it does not upload itself to GitHub.
+
+## Training dashboard update
+
+Four API/transaction tests pass: reward bounds and field validation, atomic application/persistence, deferral until a fair self-play round boundary, lock polling without file growth, save requests, localhost/token checks, path traversal rejection and snapshot ZIP export. The six movement/self-play regression tests still pass.
+
+Browser verification started a real PPO movement run, changed time_cost from 0.5 to 1.25 using the UI, observed the applied checkpoint value, requested a checkpoint, stopped cleanly after 6,657 steps, selected its saved model for a new self-play run, and verified mode-specific controls. The training controller was shut down after testing. Native replay-window launch was not retested in this dashboard pass; prior offscreen scene validation remains applicable. Linux service execution remains untested on this Windows host.

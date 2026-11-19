@@ -29,8 +29,10 @@ class Curriculum:
     failure_cost: float = 20.0
     goal_reward: float = 30.0
     contact_reward: float = .5
+    pursuit_cost: float = .2
+    hit_bonus_budget: float = 4.0
     def validate(self):
-        weights={'reach_reward','progress_weight','time_cost','joint_travel_cost','closing_cost','failure_cost','goal_reward','contact_reward'}
+        weights={'reach_reward','progress_weight','time_cost','joint_travel_cost','closing_cost','failure_cost','goal_reward','contact_reward','pursuit_cost','hit_bonus_budget'}
         for k,v in asdict(self).items():
             if not math.isfinite(v) or v<0 or (v==0 and k not in weights):
                 raise ValueError(f'{k} must be finite and nonnegative (timing/geometry must be positive)')
@@ -79,7 +81,19 @@ class SkillsEnv(gym.Env):
         if len(self.workspace)<2:raise ValueError('No usable target workspace at this angle threshold')
         self.commands=np.zeros((2,2));self.target=np.zeros(2);self.done=True
         self.joints=['left_motor','left_elbow','right_motor','right_elbow']
-        self.active=[False,False];self.hit_budget=[4.,4.];self.hold=0.
+        self.active=[False,False];self.hit_budget=[self.curriculum.hit_bonus_budget]*2;self.hold=0.
+
+    def set_curriculum(self, curriculum):
+        previous=self.curriculum
+        self.curriculum=curriculum.validate()
+        try:
+            samples=AirHockeyEnv._workspace_samples(self)
+            workspace=np.array([p for p in samples if self.target_valid(p)])
+            if len(workspace)<2:raise ValueError('No reachable targets at that angle threshold')
+        except Exception:
+            self.curriculum=previous
+            raise
+        self.workspace=workspace
 
     def target_valid(self, point):
         try:q=motor_targets(np.asarray(point)-[0,BASE_Y])
@@ -136,7 +150,7 @@ class SkillsEnv(gym.Env):
                 self.data.joint(self._prefix(side)+name+'_motor').qpos[0]=angles[i]
                 self.data.joint(self._prefix(side)+name+'_elbow').qpos[0]=wrap(math.atan2(*(target-elbow)[::-1])-theta-home_elbow)
             self.commands[side]=angles
-        self.active=[False,False];self.hit_budget=[4.,4.];self.hold=0.;self.done=False
+        self.active=[False,False];self.hit_budget=[self.curriculum.hit_bonus_budget]*2;self.hold=0.;self.done=False
         self.travel=0.;self.steps=0
         # Seeded serve direction is balanced by swapping players during match evaluation.
         self.data.joint('puck_x').qpos[0]=self.np_random.uniform(-.10,.10)
@@ -206,7 +220,7 @@ class SkillsEnv(gym.Env):
             # Bounded pursuit encourages play before goals are learned.
             desired=p if p[1]<0 else np.array([0.,BASE_Y+P['tip'][1]])
             reachable=self.workspace[np.argmin(np.sum((self.workspace-desired)**2,axis=1))]
-            parts['pursuit']=-.2*dt*float(np.linalg.norm(pad-reachable))
+            parts['pursuit']=-self.curriculum.pursuit_cost*dt*float(np.linalg.norm(pad-reachable))
         if invalid or any(failures):
             outcome='invalid_physics' if invalid else 'arm_failure';terminated=True;success=False
             winner=None if invalid or all(failures) or self.mode=='movement' else (1 if failures[0] else 0)

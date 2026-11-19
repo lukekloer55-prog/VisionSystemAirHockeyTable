@@ -19,7 +19,10 @@ class RunLock:
     """OS lock is released on process death; stale lock files do not block resume."""
     def __init__(self,path):self.path=path
     def __enter__(self):
-        self.file=open(self.path,'a+b');self.file.seek(0);self.file.write(b'0');self.file.flush();self.file.seek(0)
+        self.file=open(self.path,'a+b')
+        if os.fstat(self.file.fileno()).st_size==0:
+            self.file.write(b'0');self.file.flush()
+        self.file.seek(0)
         try:
             if os.name=='nt':
                 import msvcrt
@@ -62,6 +65,8 @@ class Store:
                 fd=os.open(self.path,os.O_RDONLY)
                 try:os.fsync(fd)
                 finally:os.close(fd)
+            save_request=self.path/'SAVE'
+            if save_request.exists():save_request.unlink()
             for old in sorted(self.path.glob('snapshot-*'),reverse=True)[3:]:self.remove_snapshot(old)
             return folder
         finally:
@@ -172,6 +177,10 @@ def main():
             print('Snapshots keep the latest three generations. No physical motor commands.',flush=True)
             starting_round=state['round'];callback=Callback(env)
             while not stop() and (args.rounds==0 or state['round']-starting_round<args.rounds):
+                from skills_controls import apply_pending
+                updated=apply_pending(env,state,models,store)
+                if updated is not None:folder=updated
+                if (run/'SAVE').exists():folder=store.save(state,models)
                 if state['phase'].startswith('train_'):
                     key=state['phase'][-1]
                     if key not in models:

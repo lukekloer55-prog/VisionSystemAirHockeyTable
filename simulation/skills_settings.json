@@ -12,5 +12,7 @@
   "min_tip_angle_deg": 35.0,
   "failure_cost": 20.0,
   "goal_reward": 30.0,
-  "contact_reward": 0.5
+  "contact_reward": 0.5,
+  "pursuit_cost": 0.2,
+  "hit_bonus_budget": 4.0
 }
