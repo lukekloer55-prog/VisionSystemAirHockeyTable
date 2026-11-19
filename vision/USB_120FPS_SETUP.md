@@ -1,5 +1,7 @@
 # USB camera support for the Jetson vision tracker
 
+For the newer optional 1080p nvv4l2/BGRx path and independent display refresh, see USB_PERFORMANCE_SETUP.md. Software decoding remains the default for usb_tracker.py.
+
 ## Install this update
 
 Upload the extracted files together into the repository's `vision/` folder. Keep existing camera/calibration JSON files; none are included or overwritten by this package. This update is for the Jetson vision system, not the simulation PC, and has not been pushed to GitHub.

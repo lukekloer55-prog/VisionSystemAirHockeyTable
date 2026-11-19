@@ -105,6 +105,29 @@ class USBTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text())['output_shape'],[540,960,3])
             self.assertTrue(cam.released)
 
+    def test_accelerated_bgrx_contract(self):
+        p=usb.build_pipeline('/dev/video0',1920,1080,120,'MJPG',decoder='nvv4l2')
+        self.assertIn('nvv4l2decoder mjpeg=1',p)
+        self.assertIn('io-mode=2',p);self.assertIn('format=BGRx',p)
+        self.assertNotIn('videoconvert',p);self.assertNotIn('nvjpegdec',p)
+        cam=Camera(shape=(1080,1920,4))
+        self.assertIs(usb.open_usb(CV(cam),'/dev/video0',1920,1080,120,'MJPG',decoder='nvv4l2'),cam)
+        cam=Camera(shape=(1080,1920,3))
+        with self.assertRaises(RuntimeError):usb.open_usb(CV(cam),'/dev/video0',1920,1080,120,'MJPG',decoder='nvv4l2')
+        self.assertTrue(cam.released)
+        with self.assertRaises(RuntimeError):usb.open_usb(CV(cam),'/dev/video0',1920,1080,120,'MJPG',backend='v4l2',decoder='nvv4l2')
+        with self.assertRaises(RuntimeError):usb.build_pipeline('/dev/video0',1920,1080,120,'YUYV',decoder='nvv4l2')
+    def test_display_schedule_and_profile(self):
+        from vision_timing import DisplaySchedule,FrameProfiler
+        schedule=DisplaySchedule(30)
+        self.assertTrue(schedule.due(0));self.assertFalse(schedule.due(.008));self.assertTrue(schedule.due(.034))
+        every=DisplaySchedule(0)
+        self.assertTrue(every.due(0));self.assertTrue(every.due(.001))
+        ticks=iter([0,0,.01,.02,.03,.03])
+        profiler=FrameProfiler(True,.02,clock=lambda:next(ticks))
+        profiler.begin();profiler.mark('capture');profiler.mark('detect');profiler.end()
+        self.assertEqual(profiler.frames,0)
+
     def test_exposure_readback(self):
         result=SimpleNamespace(stdout='auto_exposure: 1 (Manual Mode)\nexposure_time_absolute: 20\n')
         with patch.object(usb.subprocess,'run',return_value=result) as run:

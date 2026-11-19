@@ -17,3 +17,5 @@ python3 usb_tracker.py --self-test
 ```
 
 CSI remains available through `python3 airhockey_shot_tracker.py`. This project does not train policies or command motors. Actual 120 FPS tracking has not been verified on the Jetson.
+
+For the optional full-HD nvv4l2/BGRx capture path with stage timing, see USB_PERFORMANCE_SETUP.md. Run `python3 usb_1080p.py --test-camera`, then `python3 usb_1080p.py`. This requests 120 FPS; use measured rates to assess performance.

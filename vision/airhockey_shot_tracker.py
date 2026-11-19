@@ -100,6 +100,9 @@ def main():
     parser.add_argument('--usb-height', type=int, default=720)
     parser.add_argument('--usb-backend', choices=('gstreamer','v4l2'), default='gstreamer',
                         help='USB capture backend; GStreamer uses software JPEG decoding')
+    parser.add_argument('--usb-decoder',choices=('software','nvv4l2'),default='software',help='nvv4l2: optional Jetson MJPG decoder with BGRx output')
+    parser.add_argument('--display-fps',type=float,default=30,help='Refresh windows at this rate; 0 displays every frame')
+    parser.add_argument('--profile',action='store_true',help='Print average stage times and measured loop FPS every 3 seconds')
     parser.add_argument('--usb-fps', type=float, default=120)
     parser.add_argument('--usb-fourcc', choices=('MJPG','YUYV'), default='MJPG')
     parser.add_argument('--usb-process-width',type=int,default=960,help='Maximum processing width; exact aspect ratio, no crop; 0 keeps native size')
@@ -145,6 +148,10 @@ def main():
         parser.error('--usb-exposure-us requires USB and a positive multiple of 100 microseconds.')
     if args.camera_report and not args.test_camera:
         parser.error('--camera-report requires --test-camera.')
+    if not math.isfinite(args.display_fps) or args.display_fps<0:
+        parser.error('display-fps must be nonnegative and finite.')
+    if args.usb_decoder=='nvv4l2' and (args.camera_source!='usb' or args.usb_backend!='gstreamer' or args.usb_fourcc!='MJPG'):
+        parser.error('nvv4l2 requires --camera-source usb --usb-backend gstreamer --usb-fourcc MJPG.')
     if args.test_camera and args.camera_source != 'usb':
         parser.error('--test-camera requires --camera-source usb')
 
@@ -166,7 +173,7 @@ def main():
         from usb_camera import open_usb, benchmark
         try:
             benchmark(open_usb(cv2,args.usb_device,args.usb_width,args.usb_height,
-                               args.usb_fps,args.usb_fourcc,args.usb_backend,usb_output_size),
+                               args.usb_fps,args.usb_fourcc,args.usb_backend,usb_output_size,args.usb_decoder),
                       seconds=args.test_camera_seconds,report_path=args.camera_report,requested_fps=args.usb_fps)
         except RuntimeError as error:
             raise SystemExit(str(error))
@@ -359,7 +366,7 @@ def main():
         from usb_camera import open_usb
         try:
             camera = open_usb(cv2,args.usb_device,capture_width,capture_height,
-                              capture_fps,args.usb_fourcc,args.usb_backend,usb_output_size)
+                              capture_fps,args.usb_fourcc,args.usb_backend,usb_output_size,args.usb_decoder)
         except RuntimeError as error:
             cv2.destroyAllWindows()
             raise SystemExit(str(error))
@@ -382,25 +389,34 @@ def main():
     print(f'Camera {args.camera_source}: {capture_width}x{capture_height} @ {capture_fps} requested FPS; '
           f'processing {raw_size[0]}x{raw_size[1]}. Drag window edges to resize.')
     print('Far end is y=0. Left/right rails reflect; near/far ends STOP the prediction.')
+    from vision_timing import FrameProfiler,DisplaySchedule
+    profiler=FrameProfiler(args.profile)
+    display=DisplaySchedule(args.display_fps)
+    expected_channels=4 if args.camera_source=='usb' and args.usb_decoder=='nvv4l2' else 3
     try:
         while True:
+            profiler.begin()
             ok, raw = camera.read()
+            profiler.mark('capture_wait')
             now = time.monotonic()
             if not ok or raw is None:
                 print('Camera stopped delivering frames.')
                 break
             if args.camera_source == 'usb':
-                if raw.shape != (raw_size[1],raw_size[0],3):
+                if raw.shape != (raw_size[1],raw_size[0],expected_channels):
                     print('USB frame dimensions changed; stopping to protect calibration.')
                     break
             dt_frame = now - previous_time
             previous_time = now
             if dt_frame > 0:
                 fps = 0.9 * fps + 0.1 / dt_frame
-            raw_display = raw.copy()
+            render_frame=display.due(now)
+            raw_display=raw.copy() if render_frame else None
+            profiler.mark('prepare')
             if calibrating:
                 mask = yellow_mask(raw)
                 candidates = detect(mask, False)
+                profiler.mark('detect')
                 chosen = None
                 if selection['point'] is not None and candidates:
                     chosen = min(candidates, key=lambda c: np.linalg.norm(c[0] - selection['point']))
@@ -408,26 +424,30 @@ def main():
                         chosen = None
                 if chosen is not None:
                     stable_centers.append(chosen[0])
-                    cv2.drawContours(raw_display, [chosen[3]], -1, (0, 255, 0), 2)
-                    cv2.circle(raw_display, tuple(chosen[0].astype(int)), 4, (0, 0, 255), -1)
+                    if render_frame:
+                        cv2.drawContours(raw_display, [chosen[3]], -1, (0, 255, 0), 2)
+                        cv2.circle(raw_display, tuple(chosen[0].astype(int)), 4, (0, 0, 255), -1)
                 else:
                     stable_centers.clear()
-                for index, corner in enumerate(corners):
-                    if corner is not None:
-                        p = tuple(np.rint(corner).astype(int))
-                        cv2.circle(raw_display, p, 6, (255, 255, 0), 2)
-                        cv2.putText(raw_display, str(index+1), p, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
-                label(raw_display, 'CALIBRATION: 1 far-left | 2 far-right | 3 near-right | 4 near-left', 22)
-                label(raw_display, 'Puck touching BOTH rails; click puck, hold still, press corner number.', 44)
-                label(raw_display, notice, 66, (0, 255, 255))
-                label(raw_display, 'ENTER applies all four | S saves yellow settings | Q quits', 88)
-                cv2.imshow('Yellow mask', mask)
+                if render_frame:
+                    for index, corner in enumerate(corners):
+                        if corner is not None:
+                            p = tuple(np.rint(corner).astype(int))
+                            cv2.circle(raw_display, p, 6, (255, 255, 0), 2)
+                            cv2.putText(raw_display, str(index+1), p, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,0), 2)
+                    label(raw_display, 'CALIBRATION: 1 far-left | 2 far-right | 3 near-right | 4 near-left', 22)
+                    label(raw_display, 'Puck touching BOTH rails; click puck, hold still, press corner number.', 44)
+                    label(raw_display, notice, 66, (0, 255, 255))
+                    label(raw_display, 'ENTER applies all four | S saves yellow settings | Q quits', 88)
+                    cv2.imshow('Yellow mask', mask)
             else:
                 # Rectify BEFORE detection and velocity estimation. Both axes now
                 # have the same mm/pixel scale, so reflection geometry is meaningful.
                 topdown = cv2.warpPerspective(raw, transform, (out_width, out_height))
+                profiler.mark('warp')
                 mask = yellow_mask(topdown)
                 candidates = detect(mask, True)
+                profiler.mark('detect')
                 measured = None
                 expected = None
                 age = now - last_seen if last_seen is not None else math.inf
@@ -482,41 +502,48 @@ def main():
                     velocity_ready = False
                     velocity = np.zeros(2)
 
-                label(topdown, f'{status} | Loop FPS {fps:.1f}', 20, (0,255,0) if measured is not None else (0,255,255))
-                if position is not None:
-                    label(topdown, f'Now X={position[0]:.1f} Y={position[1]:.1f} mm', 40)
-                if position is not None and velocity_ready:
-                    # If we already bounced during a missing-frame interval, use
-                    # that interval's reflected velocity for the future forecast.
-                    prediction_velocity = estimate[1] if measured is None else velocity
-                    short = predict_path(position, prediction_velocity, args.horizon_ms/1000, width, length, radius)
-                    preview = predict_path(position, prediction_velocity, args.preview_ms/1000, width, length, radius)
-                    # Cyan is the longer optional path; red is the short-horizon marker.
-                    for start, end in zip(preview[2], preview[2][1:]):
-                        cv2.line(topdown, pixel(start), pixel(end), (255,255,0), 2)
-                    for bounce in preview[3]:
-                        cv2.circle(topdown, pixel(bounce[1]), 5, (255,0,255), -1)
-                    if short[4] is None:
-                        cv2.drawMarker(topdown, pixel(short[0]), (0,0,255), cv2.MARKER_CROSS, 18, 2)
-                        label(topdown, f'+{args.horizon_ms:g}ms X={short[0][0]:.1f} Y={short[0][1]:.1f} mm', 60, (0,0,255))
-                    else:
-                        label(topdown, f'End reached in {short[4]*1000:.0f}ms; forecast stops', 60, (0,0,255))
-                    label(topdown, f'Vx={prediction_velocity[0]:.0f} Vy={prediction_velocity[1]:.0f} mm/s', 80)
-                    if preview[3]:
-                        bounce = preview[3][0]
-                        label(topdown, f'Bounce {bounce[0]*1000:.0f}ms: {bounce[2]:.0f} -> {bounce[3]:.0f} deg', 100, (255,0,255))
-                    label(topdown, f'Cyan path: up to {args.preview_ms:g}ms (ideal motion)', 120)
-                # Plan only from a fresh measurement and an established velocity.
-                shot_overlay.set_calibration(corners)
-                topdown = shot_overlay.draw(topdown, position, velocity if velocity_ready else None,
-                                           measured is not None)
-                label(raw_display, 'Tracking: C calibrate | S save | G goal | H shot mode | Q quit', 22)
-                cv2.imshow('Top-down tracker', topdown)
-                cv2.imshow('Yellow mask', mask)
+                profiler.mark('tracking')
+                if render_frame:
+                    label(topdown, f'{status} | Loop FPS {fps:.1f}', 20, (0,255,0) if measured is not None else (0,255,255))
+                    if position is not None:
+                        label(topdown, f'Now X={position[0]:.1f} Y={position[1]:.1f} mm', 40)
+                    if position is not None and velocity_ready:
+                        # If we already bounced during a missing-frame interval, use
+                        # that interval's reflected velocity for the future forecast.
+                        prediction_velocity = estimate[1] if measured is None else velocity
+                        short = predict_path(position, prediction_velocity, args.horizon_ms/1000, width, length, radius)
+                        preview = predict_path(position, prediction_velocity, args.preview_ms/1000, width, length, radius)
+                        # Cyan is the longer optional path; red is the short-horizon marker.
+                        for start, end in zip(preview[2], preview[2][1:]):
+                            cv2.line(topdown, pixel(start), pixel(end), (255,255,0), 2)
+                        for bounce in preview[3]:
+                            cv2.circle(topdown, pixel(bounce[1]), 5, (255,0,255), -1)
+                        if short[4] is None:
+                            cv2.drawMarker(topdown, pixel(short[0]), (0,0,255), cv2.MARKER_CROSS, 18, 2)
+                            label(topdown, f'+{args.horizon_ms:g}ms X={short[0][0]:.1f} Y={short[0][1]:.1f} mm', 60, (0,0,255))
+                        else:
+                            label(topdown, f'End reached in {short[4]*1000:.0f}ms; forecast stops', 60, (0,0,255))
+                        label(topdown, f'Vx={prediction_velocity[0]:.0f} Vy={prediction_velocity[1]:.0f} mm/s', 80)
+                        if preview[3]:
+                            bounce = preview[3][0]
+                            label(topdown, f'Bounce {bounce[0]*1000:.0f}ms: {bounce[2]:.0f} -> {bounce[3]:.0f} deg', 100, (255,0,255))
+                        label(topdown, f'Cyan path: up to {args.preview_ms:g}ms (ideal motion)', 120)
+                    # Plan only from a fresh measurement and an established velocity.
+                    shot_overlay.set_calibration(corners)
+                    topdown = shot_overlay.draw(topdown, position, velocity if velocity_ready else None,
+                                               measured is not None)
+                    label(raw_display, 'Tracking: C calibrate | S save | G goal | H shot mode | Q quit', 22)
+                    cv2.imshow('Top-down tracker', topdown)
+                    cv2.imshow('Yellow mask', mask)
 
-            # Display and key handling happen exactly ONCE per camera frame.
-            cv2.imshow('Camera - calibration', raw_display)
-            key = cv2.waitKey(1) & 0xff
+            profiler.mark('overlay_display')
+            # Service GUI events at the display cadence; tracking continues between refreshes.
+            key=255
+            if render_frame:
+                label(raw_display,f'Loop FPS {fps:.1f} | display cap {args.display_fps:g}',raw_display.shape[0]-12)
+                cv2.imshow('Camera - calibration', raw_display)
+                key=cv2.waitKey(1) & 0xff
+            profiler.mark('gui')
             if not calibrating:
                 shot_overlay.key(key)
             if key == ord('q'):
@@ -554,6 +581,7 @@ def main():
                         velocity_ready = False
                     except ValueError as error:
                         notice = str(error)
+            profiler.end()
     except RuntimeError as error:
         print(f'Capture error: {error}')
     except KeyboardInterrupt:

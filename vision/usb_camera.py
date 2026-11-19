@@ -16,22 +16,37 @@ def fourcc_text(code):
     return ''.join(chr((value >> (8*i)) & 255) for i in range(4))
 
 
-def open_usb(cv, device, width, height, fps, fourcc, backend='gstreamer', output_size=None):
+def open_usb(cv, device, width, height, fps, fourcc, backend='gstreamer', output_size=None, decoder='software'):
     """Choose the requested capture backend without silently falling back."""
     validate_mode(device,width,height,fps,fourcc,output_size)
+    if decoder not in ('software','nvv4l2'):
+        raise RuntimeError('Decoder must be software or nvv4l2.')
+    if decoder=='nvv4l2' and (backend!='gstreamer' or fourcc!='MJPG'):
+        raise RuntimeError('nvv4l2 requires GStreamer and MJPG.')
     if backend == 'gstreamer':
-        return open_gstreamer(cv, device, width, height, fps, fourcc,output_size)
+        return open_gstreamer(cv, device, width, height, fps, fourcc,output_size,decoder)
     if backend != 'v4l2':
         raise RuntimeError('USB backend must be gstreamer or v4l2.')
     camera=open_v4l2(cv, device, width, height, fps, fourcc)
     return ResizedCapture(cv,camera,output_size,(width,height)) if output_size else camera
 
 
-def build_pipeline(device, width, height, fps, fourcc, output_size=None):
+def build_pipeline(device, width, height, fps, fourcc, output_size=None, decoder="software"):
     """Build a USB pipeline; decode MJPEG in software, then convert to BGR."""
     validate_mode(device,width,height,fps,fourcc,output_size)
     rate = Fraction(str(fps)).limit_denominator(10000)
     caps = f'width={width},height={height},framerate={rate.numerator}/{rate.denominator}'
+    if decoder=='nvv4l2':
+        if fourcc!='MJPG':
+            raise RuntimeError('nvv4l2 requires MJPG.')
+        ow,oh=output_size or (width,height)
+        return (f'v4l2src device={device} io-mode=2 ! image/jpeg,{caps} ! '
+                'queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! '
+                'jpegparse ! nvv4l2decoder mjpeg=1 ! nvvidconv ! '
+                f'video/x-raw,format=BGRx,width={ow},height={oh},pixel-aspect-ratio=1/1 ! '
+                'appsink max-buffers=1 drop=true sync=false')
+    if decoder!='software':
+        raise RuntimeError('Decoder must be software or nvv4l2.')
     if fourcc == 'MJPG':
         # This is the software decoder verified by the standalone camera test.
         decode = f'image/jpeg,{caps} ! queue max-size-buffers=2 max-size-bytes=0 max-size-time=0 leaky=downstream ! jpegparse ! jpegdec ! '
@@ -48,9 +63,9 @@ def build_pipeline(device, width, height, fps, fourcc, output_size=None):
             'appsink max-buffers=1 drop=true sync=false')
 
 
-def open_gstreamer(cv, device, width, height, fps, fourcc, output_size=None):
+def open_gstreamer(cv, device, width, height, fps, fourcc, output_size=None, decoder="software"):
     """Open the pipeline and verify that it delivers a correctly sized BGR frame."""
-    pipeline = build_pipeline(device, width, height, fps, fourcc,output_size)
+    pipeline = build_pipeline(device, width, height, fps, fourcc,output_size,decoder)
     print(f'USB GStreamer requested: {width}x{height} {fps:g} FPS {fourcc}')
     print('Pipeline: '+pipeline)
     camera = cv.VideoCapture(pipeline, cv.CAP_GSTREAMER)
@@ -62,9 +77,12 @@ def open_gstreamer(cv, device, width, height, fps, fourcc, output_size=None):
         if not ok or frame is None:
             raise RuntimeError('GStreamer opened but returned no camera image.')
         ow,oh=output_size or (width,height)
-        if len(frame.shape) != 3 or frame.shape != (oh,ow,3):
-            raise RuntimeError(f'Expected {ow}x{oh} BGR output, received {frame.shape}.')
-        print('BGR frames verified. Requested FPS is not a measured delivery rate; use --test-camera.')
+        channels=4 if decoder=='nvv4l2' else 3
+        color='BGRx' if channels==4 else 'BGR'
+        if len(frame.shape) != 3 or frame.shape != (oh,ow,channels):
+            raise RuntimeError(f'Expected {ow}x{oh} {color} output, received {frame.shape}. '
+                               'This OpenCV build may not support BGRx appsink input; use --usb-decoder software.')
+        print(f'{color} frames verified. Requested FPS is not measured delivery; use --test-camera.')
         return camera
     except Exception:
         camera.release()
@@ -132,8 +150,8 @@ def benchmark(camera, seconds=10, report_path=None, requested_fps=None):
         elapsed = time.monotonic()-start
         report=dict(frames=frames,elapsed_seconds=elapsed,decoded_fps=frames/elapsed,
                     requested_fps=requested_fps,output_shape=list(shape),
-                    scope='Decoded BGR delivery only; not unique sensor frames, latency or tracker FPS')
-        print(f'Delivered/decoded: {frames/elapsed:.1f} FPS over {elapsed:.1f} s.; BGR shape {shape}')
+                    scope='Decoded image delivery only; not unique sensor frames, latency or tracker FPS')
+        print(f'Delivered/decoded: {frames/elapsed:.1f} FPS over {elapsed:.1f} s.; image shape {shape}')
         if requested_fps and frames/elapsed < requested_fps*.9:
             print('Below requested rate: check camera timing, decoder/conversion cost and USB diagnostics.')
         if report_path:

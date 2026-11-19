@@ -14,3 +14,5 @@ Camera-free tests passed locally:
 - Existing 87 trajectory cases and 81 shot/collision cases passed.
 
 The tests use fake capture objects and mocked controls. They establish software behavior, not Jetson driver or camera compatibility. No ELP camera or Jetson is attached to this workspace. Real GStreamer negotiation, decoded image quality, actual camera/tracker FPS, GUI calibration and exposure changes require the user's hardware test. Earlier screenshots demonstrated raw USB frame receipt near 120 FPS, not this updated full tracker running at 120 FPS.
+
+BGRx/profiling update: see USB_PERFORMANCE_SETUP.md for the additional two capture/timing tests, real OpenCV image-equivalence checks and synthetic calibrated-loop validation. Hardware performance has not been verified locally.
