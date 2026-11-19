@@ -44,6 +44,21 @@ class Tests(unittest.TestCase):
   self.assertEqual((run/'trainer.lock').stat().st_size,1)
   self.assertFalse(controller.running(run))
   (run/'SAVE').touch();store.save(state,models);self.assertFalse((run/'SAVE').exists())
+ def test_rename_preserves_checkpoint_and_export(self):
+  run,store,state,models=self.make_run();controller=TrainingController(self.root)
+  before=(run/'CURRENT.json').read_bytes();_,folder=store.load()
+  weights=(folder/'champion.zip').read_bytes()
+  self.assertEqual(controller.state()['runs'][0]['display_name'],'example')
+  with RunLock(run/'trainer.lock'):
+   controller.action('rename',{'name':'example','display_name':' Robot v1 - movement + self-play '})
+  self.assertEqual(controller.state()['runs'][0]['display_name'],'Robot v1 - movement + self-play')
+  self.assertEqual((run/'CURRENT.json').read_bytes(),before)
+  self.assertEqual((folder/'champion.zip').read_bytes(),weights)
+  with zipfile.ZipFile(io.BytesIO(controller.export('example'))) as z:
+   self.assertEqual(json.loads(z.read('example/run_details.json'))['display_name'],'Robot v1 - movement + self-play')
+  for label in ['', '   ', 'x'*101, 'bad\nname', None]:
+   with self.assertRaises(ValueError):controller.action('rename',{'name':'example','display_name':label})
+  with self.assertRaises(ValueError):controller.action('rename',{'name':'../outside','display_name':'Bad'})
  def test_http_and_export(self):
   run,store,state,models=self.make_run();controller=TrainingController(self.root);dashboard=Dashboard(controller)
   try:

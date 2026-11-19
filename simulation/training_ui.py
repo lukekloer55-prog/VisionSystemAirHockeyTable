@@ -52,6 +52,8 @@ class TrainingController:
      state,folder=self.snapshot(path)
      if state.get('schema')!=SCHEMA:continue
      record.update(state);record['checkpoint']=folder.name
+     try:record['display_name']=json.loads((path/'run_details.json').read_text(encoding='utf-8'))['display_name']
+     except (OSError,ValueError,KeyError,TypeError):record['display_name']=path.name
     except (ValueError,KeyError,OSError,json.JSONDecodeError):record['status']='Starting or no checkpoint'
     for file,key in [('pending_rewards.json','queued_rewards'),('applying_rewards.json','applying_rewards')]:
      try:record[key]=json.loads((path/file).read_text())
@@ -104,6 +106,13 @@ class TrainingController:
   with self.lock:
    path=self.path(data['name'])
    if not path.exists():raise ValueError('Run does not exist')
+   if action=='rename':
+    self.snapshot(path)
+    label=data.get('display_name')
+    if not isinstance(label,str) or not 1<=len(label.strip())<=100 or any(ord(c)<32 or ord(c)==127 for c in label):raise ValueError('Enter a display name of 1-100 characters without control characters')
+    label=label.strip()
+    atomic_json(path/'run_details.json',{'display_name':label})
+    return {'message':'Renamed to '+label+'. Checkpoints, learned weights and the folder path are unchanged.'}
    if action=='stop':
     if self.running(path):(path/'STOP').touch()
     return {'message':'Stop requested. Wait for Running to change to Stopped; the trainer saves before exiting.'}
@@ -133,7 +142,7 @@ class TrainingController:
      z.writestr(name+'/CURRENT.json',json.dumps({'snapshot':folder.name}))
      for p in folder.iterdir():
       if p.is_file():z.write(p,name+'/'+folder.name+'/'+p.name)
-     for filename in ['events.jsonl','events.previous.jsonl']:
+     for filename in ['events.jsonl','events.previous.jsonl','run_details.json']:
       if (path/filename).exists():z.write(path/filename,name+'/'+filename)
     return buffer.getvalue()
    except FileNotFoundError:

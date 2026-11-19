@@ -32,3 +32,6 @@ Additional checks passed: resumed the full-rally checkpoint for 1,024 steps with
 Four API/transaction tests pass: reward bounds and field validation, atomic application/persistence, deferral until a fair self-play round boundary, lock polling without file growth, save requests, localhost/token checks, path traversal rejection and snapshot ZIP export. The six movement/self-play regression tests still pass.
 
 Browser verification started a real PPO movement run, changed time_cost from 0.5 to 1.25 using the UI, observed the applied checkpoint value, requested a checkpoint, stopped cleanly after 6,657 steps, selected its saved model for a new self-play run, and verified mode-specific controls. The training controller was shut down after testing. Native replay-window launch was not retested in this dashboard pass; prior offscreen scene validation remains applicable. Linux service execution remains untested on this Windows host.
+
+
+Run display-name update: controller tests passed for renaming while locked, preserving checkpoint pointer and weights, export metadata, invalid names and path traversal. Existing UI polling/new-run JavaScript tests passed. A 256-step PPO movement transfer completed and persisted its source training lineage. Linux GUI and background service execution were not retested for this metadata-only change.

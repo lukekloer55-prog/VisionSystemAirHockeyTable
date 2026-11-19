@@ -151,3 +151,9 @@ uv run --extra train python training_service.py status --mode selfplay
 ```
 
 Service reference: [systemd service restart and stop behavior](https://www.freedesktop.org/software/systemd/man/257/systemd.service.html). This package was locally tested on Windows with MuJoCo/PPO; the Linux service must be checked on your CachyOS PC before an unattended week. No week-long reliability or learning-quality run has been completed here.
+
+
+### Rename a saved run
+Select a saved run in the training panel, enter its **Run display name** under Saved results, and click **Rename run**. The display name is saved in `run_details.json` and included in exported results. The folder name, checkpoints, model weights and background service paths stay unchanged.
+
+To continue movement training in self-play, use **Use model in new run**, choose self-play and a new folder name, and start. The new run records the source training stage in its checkpoint history. Rename the new run to a descriptive name such as `Robot v1 - movement + self-play`. Existing runs do not gain retroactive history.

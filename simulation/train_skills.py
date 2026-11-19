@@ -170,6 +170,10 @@ def main():
                     source=json.loads(initial_state.read_text())
                     if source['schema']!=SCHEMA or source['geometry']!=geometry or source['settings']!=asdict(settings):p.error('Initial model geometry/schema/physical settings do not match')
                     models['champion']=PPO.load(args.initial_model,device='cpu')
+                    source_run=args.initial_model.parent.parent
+                    try:source_label=json.loads((source_run/'run_details.json').read_text(encoding='utf-8'))['display_name']
+                    except (OSError,ValueError,KeyError,TypeError):source_label=source_run.name
+                    state['lineage']=[*source.get('lineage',[]),{'run':source_run.name,'display_name':source_label,'mode':source['mode'],'checkpoint':args.initial_model.parent.name,'steps':source.get('total_steps',0)}]
                 else:models['champion']=PPO('MlpPolicy',env,device='cpu',seed=args.seed,verbose=0,n_steps=256,batch_size=64,n_epochs=5,learning_rate=3e-4,gamma=settings.gamma,policy_kwargs={'net_arch':[64,64]})
                 folder=store.save(state,models)
             print(f'Continuous {args.mode} training: {run.resolve()}',flush=True)

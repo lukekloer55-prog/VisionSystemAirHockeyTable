@@ -20,3 +20,9 @@ The full-rally task requires a new policy. Old 20-observation defender checkpoin
 For the original arm movement demonstration, see PLOTCLOCK_SETUP.md and run `uv run python plotclock_demo.py`. For the table/puck demonstration, run `uv run python table_demo.py`. Neither demo starts training.
 
 This package does not modify the camera tracker or send real motor commands.
+
+
+### Rename a saved run
+Select a saved run in the training panel, enter its **Run display name** under Saved results, and click **Rename run**. The display name is saved in `run_details.json` and included in exported results. The folder name, checkpoints, model weights and background service paths stay unchanged.
+
+To continue movement training in self-play, use **Use model in new run**, choose self-play and a new folder name, and start. The new run records the source training stage in its checkpoint history. Rename the new run to a descriptive name such as `Robot v1 - movement + self-play`. Existing runs do not gain retroactive history.
