@@ -9,27 +9,34 @@ from plotclock_demo import ARM_Z
 
 def apply_proxy(env):
     env.model.geom_condim[:]=1
-    for name in ('puck_shape','paddle'):
+    for name in (('puck_shape','paddle','opp_paddle') if env.mode=='game' else ('puck_shape','paddle')):
         g=env.model.geom(name);r=float(g.size[0])
         g.type=mujoco.mjtGeom.mjGEOM_SPHERE;g.size[:]=[r,0,0]
-        if name=='paddle':g.pos[2]=.006-ARM_Z
+        if name!='puck_shape':g.pos[2]=.006-ARM_Z
         env.model.geom_rbound[g.id]=r;env.model.geom_aabb[g.id]=[0,0,0,r,r,r]
 
 class CPUWorld(SkillsEnv):
+    def set_pool(self,paths):
+        from stable_baselines3 import PPO
+        self.pool=[PPO.load(p,device='cpu') for p in paths]
+    def reset(self,**kwargs):
+        obs,info=super().reset(**kwargs)
+        if getattr(self,'pool',None):self.opponent=self.pool[int(self.np_random.integers(len(self.pool)))]
+        return obs,info
     def live_state(self):return self.data.qpos.copy(),self.data.qvel.copy(),self.target.copy()
 
-def worker(settings,curriculum):
+def worker(settings,curriculum,mode):
     import torch
     torch.set_num_threads(1)
     from stable_baselines3.common.monitor import Monitor
-    env=CPUWorld('movement',Settings(**settings),Curriculum(**curriculum));apply_proxy(env)
+    env=CPUWorld(mode,Settings(**settings),Curriculum(**curriculum));apply_proxy(env)
     return Monitor(env)
 
 class HybridMovement(VecEnv):
     def __init__(self,gpu,cpu_count,settings,curriculum,seed):
         from dataclasses import asdict
         self.gpu=gpu;self.envs=gpu.envs
-        self.cpu=SubprocVecEnv([partial(worker,asdict(settings),asdict(curriculum)) for _ in range(cpu_count)],start_method='spawn')
+        self.cpu=SubprocVecEnv([partial(worker,asdict(settings),asdict(curriculum),gpu.mode) for _ in range(cpu_count)],start_method='spawn')
         self.cpu.seed(seed+100000)
         super().__init__(gpu.num_envs+cpu_count,gpu.observation_space,gpu.action_space)
     def reset(self):
@@ -43,6 +50,8 @@ class HybridMovement(VecEnv):
     def step_wait(self):
         a=self.gpu.step_wait();b=self.cpu.step_wait()
         return (*[np.concatenate([a[i],b[i]]) for i in range(3)],list(a[3])+list(b[3]))
+    def set_pool(self,paths):
+        self.gpu.set_pool(paths);self.cpu.env_method('set_pool',paths)
     def set_curriculum(self,c):
         for e in self.gpu.envs:e.set_curriculum(c)
         self.cpu.env_method('set_curriculum',c)

@@ -10,7 +10,7 @@ Open the standard panel with `uv run --extra train python training_ui.py`, then 
 4. Set GPU worlds and CPU worlds independently. Try your working GPU count with 1 or 2 CPU worlds first.
 5. Start training. All worlds collect experience for **one PPO policy and optimizer**. Each update learns from the combined rollout, then all worlds use that updated policy.
 
-A CPU count of zero keeps the earlier GPU-only physics mode. Resume preserves learned weights; world counts can change. Standard CPU self-play and league remain on their original page. Shared game/league training is not implemented.
+A CPU count of zero keeps the earlier GPU-only physics mode. Resume preserves learned weights; world counts can change. Standard CPU self-play and league remain on their original page. GPU/hybrid self-play and league are available; see GPU_LEAGUE.md.
 
 ## Count and performance display
 

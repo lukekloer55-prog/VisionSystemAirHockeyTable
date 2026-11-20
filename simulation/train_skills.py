@@ -98,6 +98,10 @@ def play_match(env,a,b,seed,rallies=8,stop=lambda:False,render=False):
 
 
 def main():
+    import sys
+    if '--performance' in sys.argv:
+        from performance import main as performance_main
+        performance_main();return
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--mode',choices=['movement','selfplay'],default='movement')
     p.add_argument('--run-dir',type=Path,required=True)

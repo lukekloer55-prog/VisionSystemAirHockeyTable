@@ -122,6 +122,10 @@ def train_batch(run,folder,state,candidates,stop,render):
 
 
 def main():
+    import sys
+    if '--performance' in sys.argv:
+        from performance import main as performance_main
+        performance_main();return
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--mode',choices=['league'],default='league')
     p.add_argument('--run-dir',type=Path,required=True)

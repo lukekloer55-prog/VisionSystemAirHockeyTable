@@ -4,6 +4,10 @@ from pathlib import Path
 os.environ.setdefault('XLA_PYTHON_CLIENT_PREALLOCATE','false')
 
 def main():
+    import sys
+    if '--performance' in sys.argv:
+        from performance import main as performance_main
+        performance_main();return
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--run-dir',type=Path,required=True)
     p.add_argument('--num-envs',type=int,default=64,help='GPU worlds')
@@ -66,6 +70,8 @@ def main():
         curriculum.validate();atomic_json(curriculum_file,asdict(curriculum))
         meta.update(num_envs=args.num_envs,cpu_envs=args.cpu_envs,total_envs=args.num_envs+args.cpu_envs,settings=asdict(settings),curriculum=asdict(curriculum),backend='Shared PPO: MJX GPU + CPU MuJoCo' if args.cpu_envs else 'MJX physics / CPU PPO')
         atomic_json(run/'mjx_run.json',meta)
+        from train_gpu_league import heartbeat
+        heartbeat(run)
         stop=[False];env=None;model=None;gpu=None;last_view=[0.];began=time.monotonic();start_steps=[0]
         def request_stop(*_):stop[0]=True
         signal.signal(signal.SIGINT,request_stop);signal.signal(signal.SIGTERM,request_stop)
@@ -77,6 +83,7 @@ def main():
             if (run/'SAVE').exists():(run/'SAVE').unlink()
         class Callback(BaseCallback):
             def _on_step(self):
+                heartbeat(run)
                 now=time.monotonic()
                 if now-last_view[0]>.2:
                     last_view[0]=now

@@ -58,3 +58,7 @@ See [MJX_BENCHMARK.md](MJX_BENCHMARK.md) for a separate CUDA 12 environment and 
 
 ## Whole-half movement targets
 Movement mode now samples the whole robot half, including near the robot end, without inverse-kinematics or motor-range filtering. Paddle boundary clearance remains. The arm still obeys its simulated limits; unreached targets time out. Existing same-geometry movement runs can resume with this broader target distribution.
+
+
+## GPU play and league
+The shared GPU page supports movement, self-play tournaments and historical leagues. See GPU_LEAGUE.md for heroic champion rankings, --performance, and unattended Linux service setup. GPU game physics and CPU worlds use the experimental planar proxy.

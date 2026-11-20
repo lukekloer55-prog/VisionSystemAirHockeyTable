@@ -246,7 +246,7 @@ class SkillsEnv(gym.Env):
         self.done=terminated or truncated
         obs=np.nan_to_num(self.observation(),nan=0,posinf=0,neginf=0)
         reward=float(np.nan_to_num(sum(parts.values()),nan=-self.curriculum.failure_cost))
-        return obs,reward,terminated,truncated,{'outcome':outcome,'winner':winner,'is_success':success,'tip_angle_deg':angle,'joint_travel_rad':self.travel,'target_distance_m':float(np.linalg.norm(pad-self.target)) if self.mode=='movement' else None,'reward_components':parts}
+        return obs,reward,terminated,truncated,{'outcome':outcome,'winner':winner,'is_success':(winner==0 if self.mode=='game' else success),'tip_angle_deg':angle,'joint_travel_rad':self.travel,'target_distance_m':float(np.linalg.norm(pad-self.target)) if self.mode=='movement' else None,'reward_components':parts}
 
     def render(self):
         if self.render_mode!='human':return

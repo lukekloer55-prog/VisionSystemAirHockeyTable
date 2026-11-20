@@ -19,6 +19,6 @@ Command-line example (two CPU workers plus 64 GPU worlds):
 
 Append `--initial-run runs/your-cpu-movement-run` only when creating a new run. Stop/save the source first. To continue an existing shared run use `--resume` with the desired GPU and CPU counts. `--steps 0` (default) continues until stopped; Ctrl+C saves. First compilation can take minutes. World counts alter rollout batch size and may affect learning as well as speed.
 
-All worlds contribute to one shared PPO policy/optimizer. Policy and reward calculations still run on CPU. CPU simulation subprocesses run concurrently with GPU physics. No rendering occurs unless the live-view control is used. Self-play/league remain separate CPU trainers.
+All worlds contribute to one shared PPO policy/optimizer. Policy and reward calculations still run on CPU. CPU simulation subprocesses run concurrently with GPU physics. No rendering occurs unless the live-view control is used. GPU/hybrid self-play and league are now available; see GPU_LEAGUE.md.
 
 Checkpoint replacement is atomic; a hard kill may lose work since the previous save. GPU numerical checks and benchmark results do not prove long-term stability. Test the combined configuration before unattended training.

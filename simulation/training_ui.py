@@ -1,6 +1,7 @@
 """Local browser control panel for movement and self-play training."""
 import argparse
 import gpu_panel
+import operations_panel
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 import io
@@ -188,7 +189,12 @@ class Dashboard:
     route=urlsplit(self.path)
     try:
      if route.path=='/':return self.send(200,Path(__file__).with_name('training_panel.html').read_text(encoding='utf-8').replace('__TOKEN__',dashboard.token),'text/html; charset=utf-8')
+     if route.path=='/operations':return self.send(200,Path(__file__).with_name('operations_panel.html').read_text(encoding='utf-8').replace('__TOKEN__',dashboard.token),'text/html; charset=utf-8')
+     if route.path=='/api/operations/state':return self.send(200,operations_panel.state(controller))
      if route.path=='/gpu':return self.send(200,Path(__file__).with_name('gpu_panel.html').read_text(encoding='utf-8').replace('__TOKEN__',dashboard.token),'text/html; charset=utf-8')
+     if route.path=='/api/gpu/performance':
+      from performance import report
+      return self.send(200,report(.2))
      if route.path=='/api/gpu/state':return self.send(200,gpu_panel.state(controller))
      if route.path=='/api/gpu/export':return self.send(200,gpu_panel.export(controller,parse_qs(route.query).get('name',[''])[0]),'application/zip','gpu-results.zip')
      if route.path=='/api/state':return self.send(200,controller.state())
@@ -204,6 +210,7 @@ class Dashboard:
      if not 0<size<=16384:raise ValueError('Invalid request size')
      data=json.loads(self.rfile.read(size));action=self.path.removeprefix('/api/')
      if not isinstance(data,dict):raise ValueError('Expected an object')
+     if action.startswith('operations/'):return self.send(200,operations_panel.action(controller,action.split('/',1)[1],data))
      if action.startswith('gpu/'):return self.send(200,gpu_panel.action(controller,action.split('/',1)[1],data))
      return self.send(200,controller.action(action,data))
     except (ValueError,OSError,KeyError,TypeError) as e:return self.send(400,{'error':str(e)})
@@ -214,6 +221,10 @@ class Dashboard:
 
 
 def main():
+ import sys
+ if '--performance' in sys.argv:
+  from performance import main as performance_main
+  performance_main();return
  p=argparse.ArgumentParser(description=__doc__)
  p.add_argument('--runs-dir',type=Path,default=Path('runs'))
  p.add_argument('--port',type=int,default=0)
