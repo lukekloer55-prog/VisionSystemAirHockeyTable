@@ -47,6 +47,7 @@ def action(c,kind,data):
                 values=validate('movement',data['values']);config=c.root/'.ui-configs'/(path.name+'.mjx.json')
                 config.parent.mkdir(exist_ok=True);atomic_json(config,{**asdict(Curriculum()),**values})
                 args+=['--curriculum',str(config)]
+                if data.get('expand_joint_travel',True):args+=['--expand-joint-travel']
                 if data.get('initial_run'):
                     source=c.path(data['initial_run'])
                     if c.running(source):raise ValueError('Stop and save the source run before copying it')

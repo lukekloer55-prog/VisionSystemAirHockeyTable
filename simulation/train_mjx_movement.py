@@ -1,5 +1,5 @@
 """Shared-policy CPU + GPU movement training, optional external live viewers."""
-import argparse,json,os,signal,time,hashlib
+import argparse,json,os,signal,time,hashlib,math
 from pathlib import Path
 os.environ.setdefault('XLA_PYTHON_CLIENT_PREALLOCATE','false')
 
@@ -11,11 +11,13 @@ def main():
     p.add_argument('--device',choices=['gpu','cpu'],default='gpu')
     p.add_argument('--resume',action='store_true')
     p.add_argument('--initial-run',type=Path)
+    p.add_argument('--expand-joint-travel',action='store_true',help='New stage only: use +/-180 degree commands; adapt imported Gaussian actor scale')
     p.add_argument('--steps',type=int,default=0)
     p.add_argument('--curriculum',type=Path)
     p.add_argument('--seed',type=int,default=1)
     args=p.parse_args()
     if not 1<=args.num_envs<=256 or not 0<=args.cpu_envs<=min(32,os.cpu_count() or 1) or args.steps<0:p.error('GPU worlds 1..256; CPU worlds 0..available cores (max 32)')
+    if args.resume and args.expand_joint_travel:p.error('Create a new stage to expand joint travel; existing runs retain their settings')
     if args.resume and args.initial_run:p.error('Resume and initial-run are mutually exclusive')
     from dataclasses import asdict
     import numpy as np
@@ -37,14 +39,14 @@ def main():
         if meta.get('geometry_hash')!=geometry_hash or meta.get('schema')!='mjx-movement-experimental-v1':p.error('Geometry/schema mismatch')
         initial=run/'latest.zip'
         if not initial.exists():p.error('No checkpoint to resume')
-        settings=Settings(**meta.get('settings',{})).validate()
+        settings=Settings(**meta.get('settings',{'action_angle_rad':.30})).validate()
     else:
         if args.initial_run:
             src=args.initial_run
             if (src/'mjx_run.json').exists():
                 info=json.loads((src/'mjx_run.json').read_text())
                 if info.get('geometry_hash')!=geometry_hash:p.error('Source geometry mismatch')
-                initial=src/'latest.zip';settings=Settings(**info.get('settings',{})).validate()
+                initial=src/'latest.zip';settings=Settings(**info.get('settings',{'action_angle_rad':.30})).validate()
             else:
                 info,folder=Store(src).load()
                 if info.get('schema')!=SCHEMA or info.get('mode')!='movement' or info.get('geometry')!=json.loads(geometry_file.read_text()):p.error('Source must be a movement run with matching geometry')
@@ -53,6 +55,10 @@ def main():
             lineage={'source_run':str(src.resolve()),'source_checkpoint':str(initial)}
         run.mkdir(parents=True,exist_ok=False)
         meta={'schema':'mjx-movement-experimental-v1','targets':'whole_robot_half_v1','experimental':True,'geometry_hash':geometry_hash,'lineage':lineage}
+    original_action_scale=settings.action_angle_rad
+    if args.expand_joint_travel:settings.action_angle_rad=math.pi
+    settings.validate()
+    meta['joint_travel_degrees']=math.degrees(settings.action_angle_rad)
     with RunLock(run/'trainer.lock'):
         if args.resume and (run/'STOP').exists():(run/'STOP').unlink()
         curriculum_file=run/'curriculum.json'
@@ -91,6 +97,11 @@ def main():
             for e in gpu.envs:e.set_curriculum(curriculum)
             if args.cpu_envs:env=HybridMovement(gpu,args.cpu_envs,settings,curriculum,args.seed)
             model=PPO.load(initial,env=env,device='cpu') if initial else PPO('MlpPolicy',env,device='cpu',n_steps=256,batch_size=64,n_epochs=5,learning_rate=3e-4,seed=args.seed,verbose=1,policy_kwargs={'net_arch':[64,64]})
+            if initial and args.expand_joint_travel:
+                from joint_travel import rescale_actor
+                rescale_actor(model,original_action_scale,settings.action_angle_rad)
+                meta['action_scale_migration']={'from_rad':original_action_scale,'to_rad':settings.action_angle_rad}
+                atomic_json(run/'mjx_run.json',meta)
             # Loading preserves the policy and optimizer; rollout buffers are rebuilt for the combined world count.
             start_steps[0]=model.num_timesteps
             print(f'Shared model: GPU={args.num_envs}, CPU={args.cpu_envs}, total={env.num_envs}. Every world contributes to the same PPO update.',flush=True)

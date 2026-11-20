@@ -29,3 +29,6 @@ Start / Resume runs indefinitely. Stop & save requests a checkpoint and shutdown
 ## Physics and validation scope
 
 The CPU workers use the same planar collision proxy as MJX, and the same target/reward/termination code. MJX is still an experimental solver backend; matching data schemas does not guarantee identical learned behavior. Short compatibility tests do not establish week-long stability. Run short training and replay checks before leaving the computer unattended.
+
+
+Joint-travel update: see JOINT_TRAVEL.md. Create a new stage with the expand-travel checkbox enabled to migrate a restricted model. Ordinary resume preserves its saved travel.

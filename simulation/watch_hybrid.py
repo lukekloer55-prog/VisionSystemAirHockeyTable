@@ -11,7 +11,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--run-dir',type=Path,required=True);p.add_argument('--live',action='store_true');args=p.parse_args()
     run=args.run_dir;meta=json.loads((run/'mjx_run.json').read_text());envs=[]
     def create():
-        e=SkillsEnv('movement',Settings(**meta.get('settings',{})),Curriculum(**meta.get('curriculum',{})),'human');apply_proxy(e);e.reset();envs.append(e);return e
+        e=SkillsEnv('movement',Settings(**meta.get('settings',{'action_angle_rad':.30})),Curriculum(**meta.get('curriculum',{})),'human');apply_proxy(e);e.reset();envs.append(e);return e
     try:
         if args.live:
             (run/'WATCH').touch();last=0

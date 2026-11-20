@@ -55,8 +55,6 @@ def motor_targets(target):
         # Pick the branch closest to the original servo angle.
         candidates = [wrap(angle(delta)+sign*offset-home) for sign in (-1,1)]
         joint_target = min(candidates,key=abs)
-        if abs(joint_target) > 0.35:
-            raise ValueError('Target exceeds the provisional +/-0.35 rad base-joint range.')
         values.append(joint_target)
     return np.array(values)
 
@@ -83,7 +81,7 @@ def make_model():
         upper = ET.SubElement(world,'body',name=side+'_upper',
             pos=f'{base[0]} {BASE_Y+base[1]} {ARM_Z}',euler=f'0 0 {home}')
         ET.SubElement(upper,'joint',name=side+'_motor',type='hinge',axis='0 0 1',
-            limited='true',range='-.35 .35',damping='.08',
+            limited='false',damping='.08',
             armature=str(GEOMETRY['assumed_rotor_inertia_kg_m2']))
         ET.SubElement(upper,'geom',type='box',pos=f'{length1/2} 0 0',
             size=f'{length1/2} {width/2} {thick/2}',mass=str(mass),rgba=color,

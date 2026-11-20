@@ -213,7 +213,7 @@ class SkillsEnv(gym.Env):
         for side in range(sides):
             pp,_=self.paddle(side);prefix=self._prefix(side);r=self.settings.paddle_diameter_m/2
             gap=np.linalg.norm(self.data.site(prefix+'left_tip').xpos-self.data.site(prefix+'right_tip').xpos)
-            failures.append(bool(gap>.002 or abs(pp[0])>WIDTH/2-r or not -LENGTH/2+r<=pp[1]<=-r or self.tip_angle(side)<5))
+            failures.append(bool(gap>.002 or abs(pp[0])>WIDTH/2-r or not -LENGTH/2+r<=pp[1]<=-r))
         parts={'time':-self.curriculum.time_cost*dt,'joint_travel':-self.curriculum.joint_travel_cost*travel,
                'closing':-self.curriculum.closing_cost*dt*max(0,1-angle/self.curriculum.min_tip_angle_deg)**2}
         terminated=bool(invalid or any(failures));winner=None;outcome='running';success=False

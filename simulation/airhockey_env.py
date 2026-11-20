@@ -42,7 +42,7 @@ class Settings:
     # Policy acts at 50 Hz; physics runs at 1000 Hz.
     control_dt: float = 0.02
     target_slew_rad_s: float = 0.75
-    action_angle_rad: float = 0.30
+    action_angle_rad: float = math.pi
     # Must match the PPO discount for the potential-based reward term.
     gamma: float = 0.99
     # Reward weights are positive magnitudes; the behind-paddle term is subtracted.
@@ -76,8 +76,8 @@ class Settings:
             raise ValueError('Paddle diameter must be between 0.02 and 0.20 m.')
         if abs(self.spawn_center_x_m)+self.spawn_half_width_m > WIDTH/2-RADIUS-.01:
             raise ValueError('Puck spawn range crosses a side rail.')
-        if self.action_angle_rad > .30 or self.target_slew_rad_s > 2:
-            raise ValueError('Initial environment supports at most 0.30 rad commands and 2 rad/s target slew.')
+        if self.action_angle_rad > math.pi or self.target_slew_rad_s > 2:
+            raise ValueError('Commands support up to pi radians (180 degrees) from home and 2 rad/s target slew.')
         if self.gamma >= 1 or not .001 <= self.control_dt <= .05:
             raise ValueError('Require gamma < 1 and control_dt between .001 and .05 s.')
         if abs(round(self.control_dt/.001)*.001-self.control_dt)>1e-9:
@@ -107,6 +107,9 @@ def training_model(settings, return_xml=False):
     world.remove(world.find("body[@name='target']"))
     root.find('option').set('timestep','.001')
     for side in ('left','right'):
+        joint=root.find(f".//joint[@name='{side}_motor']")
+        limit=min(math.pi,settings.action_angle_rad+.05)
+        joint.set('limited','true');joint.set('range',f'{-limit} {limit}')
         # Preserve CAD link dimensions, replacing only the estimated mass.
         for body_name in (side+'_upper',side+'_lower'):
             body=root.find(f".//body[@name='{body_name}']")
